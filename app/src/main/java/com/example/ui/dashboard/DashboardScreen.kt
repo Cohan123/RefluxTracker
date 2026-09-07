@@ -353,6 +353,15 @@ fun DashboardScreen(
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
+                                            if (trigger.symptomType != null) {
+                                                Text(
+                                                    text = "→ ${trigger.symptomType}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 11.sp
+                                                )
+                                            }
                                             Text(
                                                 text = trigger.assessment.label,
                                                 style = MaterialTheme.typography.bodySmall,

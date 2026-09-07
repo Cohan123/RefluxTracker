@@ -284,13 +284,22 @@ fun AnalysisScreen(
                         value = item.assessment.label
                     )
                     HorizontalDivider()
+                    if (item.symptomType != null) {
+                        DetailRow(
+                            label = "Symptomtyp:",
+                            value = item.symptomType
+                        )
+                    }
                     DetailRow(
                         label = "Konsumereignisse:",
                         value = "${item.consumptionCount}x protokolliert"
                     )
                     DetailRow(
                         label = "Symptomereignisse danach:",
-                        value = "${item.symptomEventsCount}x innerhalb 4 Std."
+                        value = if (item.symptomType != null)
+                            "${item.symptomEventsCount}x im passenden Zeitfenster"
+                        else
+                            "${item.symptomEventsCount}x innerhalb 4 Std."
                     )
                     DetailRow(
                         label = "Ø Symptomstärke nach Konsum:",
@@ -384,6 +393,14 @@ private fun TriggerCard(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    if (analysis.symptomType != null) {
+                        Text(
+                            text = "→ ${analysis.symptomType}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = "${analysis.symptomEventsCount} von ${analysis.consumptionCount} Mal Symptome",

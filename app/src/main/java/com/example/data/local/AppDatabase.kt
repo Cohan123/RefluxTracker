@@ -12,8 +12,11 @@ import com.example.data.model.SymptomEntity
 import com.example.data.security.DatabaseKeyProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 
 @Database(
     entities = [
@@ -37,6 +40,13 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
+        // Coroutines launched from Room's onCreate callback (initial seed of
+        // default foods) run independently of the database lifecycle. Without
+        // tracking, a quick close+reopen during tests triggers a
+        // "re-open an already-closed object" exception from the still-running
+        // coroutine. We keep a list so closeForTest can cancel them.
+        private val pendingSeedJobs = CopyOnWriteArrayList<Job>()
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = build(context.applicationContext)
@@ -48,6 +58,10 @@ abstract class AppDatabase : RoomDatabase() {
         /** Test-only: close the singleton so the next [getInstance] rebuilds it. */
         fun closeForTest() {
             synchronized(this) {
+                // Cancel any still-running seed jobs from previous onCreate
+                // callbacks so they don't try to reopen the closed DB.
+                pendingSeedJobs.forEach { it.cancel() }
+                pendingSeedJobs.clear()
                 INSTANCE?.close()
                 INSTANCE = null
             }
@@ -92,10 +106,13 @@ abstract class AppDatabase : RoomDatabase() {
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
-                        CoroutineScope(Dispatchers.IO).launch {
+                        val seedScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+                        val job = seedScope.launch {
                             getInstance(context).foodDao()
                                 .insertAllFoods(InitialFoodData.PREPOPULATED_FOODS)
                         }
+                        pendingSeedJobs.add(job)
+                        job.invokeOnCompletion { pendingSeedJobs.remove(job) }
                     }
                 })
 

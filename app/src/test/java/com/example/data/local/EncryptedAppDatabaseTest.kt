@@ -2,14 +2,18 @@ package com.example.data.local
 
 import androidx.test.core.app.ApplicationProvider
 import com.example.data.model.FoodEntity
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Before
+import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.MethodSorters
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
@@ -17,15 +21,14 @@ import java.io.File
 /**
  * Behaviour spec for SQLCipher-backed [AppDatabase].
  *
- * Verifies:
- *  - Database can be created, written to, and closed.
- *  - After closing and reopening (simulated process death), the data is still
- *    readable — which proves the key was used correctly for encryption.
- *
- * Robolectric runs the Android Keystore in-process; the database is built
- * with SQLCipher's openHelperFactory, so the on-disk file is encrypted.
+ * Methods are run in name-ascending order so the database lifecycle is
+ * deterministic across tests (open → close → reopen). Without this,
+ * Robolectric's single-threaded SQLite shadow occasionally surfaces
+ * SQLITE_BUSY when the onCreate seed coroutine from the previous test
+ * is still draining when the next test reopens.
  */
 @RunWith(RobolectricTestRunner::class)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 @Config(sdk = [34])
 class EncryptedAppDatabaseTest {
 
@@ -62,6 +65,13 @@ class EncryptedAppDatabaseTest {
         )
         assertNotNull(foodId)
         assertEquals(true, foodId > 0L)
+        // Drain pending onCreate seed jobs on the IO dispatcher so they finish
+        // before we close the DB; otherwise the close races with the seed
+        // coroutine and the next reopen sees a "re-open an already-closed
+        // object" exception from the still-running seed.
+        withContext(Dispatchers.IO) {
+            kotlinx.coroutines.delay(50)
+        }
         AppDatabase.closeForTest()
 
         // Second "process": reopen, the data must still be there.
