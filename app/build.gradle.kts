@@ -18,6 +18,13 @@ android {
     versionName = "1.0.0"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+    // Only ship native libraries for the ABIs real devices use today. SQLCipher's
+    // libsqlcipher.so is ~5-7 MB per ABI; without an explicit filter AGP would
+    // either strip them or include all four and balloon the APK by ~20 MB.
+    ndk {
+      abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86_64")
+    }
   }
 
   signingConfigs {
@@ -117,6 +124,14 @@ dependencies {
   implementation(libs.androidx.room.ktx)
   implementation(libs.androidx.room.runtime)
   "ksp"(libs.androidx.room.compiler)
+
+  // SQLCipher (optional local encryption of the Room database)
+  // Disable for plaintext SQLite: ./gradlew :app:assembleDebug -PenableSqlcipher=false
+  val enableSqlcipher = (project.findProperty("enableSqlcipher") ?: "true").toString().toBoolean()
+  if (enableSqlcipher) {
+    implementation(libs.sqlcipher.android)
+    implementation(libs.androidx.sqlite)
+  }
 
   // Coroutines
   implementation(libs.kotlinx.coroutines.core)

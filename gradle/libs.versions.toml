@@ -17,6 +17,8 @@ roomKtx = "2.7.0"
 roomCompiler = "2.7.0"
 kotlinxCoroutinesTest = "1.10.2"
 kotlinxCoroutinesAndroid = "1.10.2"
+sqlcipherAndroid = "4.6.1"
+androidxSqlite = "2.6.2"
 core = "1.6.1"
 runner = "1.6.2"
 robolectric = "4.16.1"
@@ -50,6 +52,8 @@ androidx-compose-material-icons-extended = { group = "androidx.compose.material"
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinxCoroutinesAndroid" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutinesAndroid" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+sqlcipher-android = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipherAndroid" }
+androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "androidxSqlite" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
