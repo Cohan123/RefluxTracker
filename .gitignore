@@ -1,18 +1,35 @@
+# IDE / OS
 *.iml
-.gradle
-.kotlin
-/local.properties
+.DS_Store
+
+# Gradle
+.gradle/
+.kotlin/
+/build
+/app/build
+/captures
+
+# Android Studio
 /.idea/caches
 /.idea/libraries
 /.idea/modules.xml
 /.idea/workspace.xml
 /.idea/navEditor.xml
 /.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
+
+# Native builds
 .externalNativeBuild
 .cxx
+
+# Local config (machine-specific, never commit)
 local.properties
 .env
+
+# Debug signing key
 debug.keystore
+
+# Release signing key
+my-upload-key.jks
+
+# Build artifacts
+app/build/

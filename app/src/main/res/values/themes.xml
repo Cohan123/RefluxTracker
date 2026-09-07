@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-
-    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar" />
+    <!--
+        The Compose theme lives in com.example.ui.theme.MyApplicationTheme.
+        This XML theme is required by the manifest to host the launcher activity.
+    -->
+    <style name="Theme.RefluxTracker" parent="android:Theme.Material.Light.NoActionBar" />
 </resources>
