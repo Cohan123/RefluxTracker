@@ -17,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -30,6 +31,7 @@ import com.example.ui.analysis.AnalysisScreen
 import com.example.ui.dashboard.DashboardScreen
 import com.example.ui.food.FoodsScreen
 import com.example.ui.meal.AddMealScreen
+import com.example.ui.settings.SettingsScreen
 import com.example.ui.symptom.AddSymptomScreen
 import com.example.ui.timeline.TimelineScreen
 
@@ -41,6 +43,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector?
 
     object AddMeal : Screen("add_meal", "Mahlzeit erfassen")
     object AddSymptom : Screen("add_symptom", "Symptom erfassen")
+    object Settings : Screen("settings", "Einstellungen")
 }
 
 val BottomNavItems = listOf(
@@ -56,6 +59,7 @@ fun RefluxNavHost(
     modifier: Modifier = Modifier,
     navController: NavHostController = rememberNavController()
 ) {
+    val context = LocalContext.current
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
 
@@ -114,7 +118,8 @@ fun RefluxNavHost(
                     onNavigateToAddMeal = { navController.navigate(Screen.AddMeal.route) },
                     onNavigateToAddSymptom = { navController.navigate(Screen.AddSymptom.route) },
                     onNavigateToTimeline = { navController.navigate(Screen.Timeline.route) },
-                    onNavigateToAnalysis = { navController.navigate(Screen.Analysis.route) }
+                    onNavigateToAnalysis = { navController.navigate(Screen.Analysis.route) },
+                    onNavigateToSettings = { navController.navigate(Screen.Settings.route) }
                 )
             }
 
@@ -147,6 +152,48 @@ fun RefluxNavHost(
                     onNavigateBack = { navController.popBackStack() }
                 )
             }
+
+            composable(Screen.Settings.route) {
+                SettingsScreen(
+                    onNavigateBack = { navController.popBackStack() },
+                    onRequestCsvExport = {
+                        // Hand off to a helper that wraps the file in a FileProvider URI
+                        // and starts the share-sheet. The helper itself does no IO.
+                        triggerCsvShare(context, viewModel)
+                    }
+                )
+            }
         }
     }
+}
+
+private fun triggerCsvShare(
+    context: android.content.Context,
+    viewModel: RefluxViewModel
+) {
+    viewModel.exportCsv(
+        context = context,
+        onReady = { file ->
+            val authority = context.packageName + ".fileprovider"
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context, authority, file
+            )
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                putExtra(android.content.Intent.EXTRA_SUBJECT, "RefluxTracker Export")
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(
+                android.content.Intent.createChooser(send, "CSV teilen")
+            )
+        },
+        onError = { t ->
+            android.widget.Toast.makeText(
+                context,
+                "Export fehlgeschlagen: ${t.message}",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    )
 }

@@ -171,6 +171,30 @@ class RefluxViewModel(
         }
     }
 
+    /**
+     * Export all locally-stored meals and symptoms as a CSV file in the
+     * app's cache directory and invoke [onReady] with the resulting File.
+     * The caller is responsible for wrapping it in a FileProvider URI and
+     * launching the system share sheet.
+     */
+    fun exportCsv(
+        context: android.content.Context,
+        onReady: (java.io.File) -> Unit,
+        onError: (Throwable) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                val file = com.example.export.RefluxDataExport.exportToCacheFile(
+                    context.applicationContext,
+                    repository
+                )
+                onReady(file)
+            } catch (t: Throwable) {
+                onError(t)
+            }
+        }
+    }
+
     companion object {
         fun provideFactory(application: Application): ViewModelProvider.Factory {
             return object : ViewModelProvider.Factory {
