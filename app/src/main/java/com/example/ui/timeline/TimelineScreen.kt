@@ -2,6 +2,7 @@ package com.example.ui.timeline
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -39,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -62,6 +65,7 @@ fun TimelineScreen(
 ) {
     val selectedOffset by viewModel.selectedDayOffset.collectAsStateWithLifecycle()
     val timelineEntries by viewModel.timelineForSelectedDay.collectAsStateWithLifecycle()
+    val expansionState = rememberTimelineExpansionState()
 
     val currentCal = remember(selectedOffset) {
         Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, selectedOffset) }
@@ -221,6 +225,8 @@ fun TimelineScreen(
                     HighDensityTimelineRow(
                         entry = entry,
                         isLast = index == timelineEntries.size - 1,
+                        isExpanded = expansionState.isExpanded(entry.timestamp),
+                        onToggle = { expansionState.toggle(entry.timestamp) },
                         onDelete = {
                             when (entry) {
                                 is TimelineEntry.Meal -> viewModel.deleteMeal(entry.mealWithFoods.meal.id)
@@ -238,6 +244,8 @@ fun TimelineScreen(
 private fun HighDensityTimelineRow(
     entry: TimelineEntry,
     isLast: Boolean,
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
     onDelete: () -> Unit
 ) {
     val isMeal = entry is TimelineEntry.Meal
@@ -304,7 +312,10 @@ private fun HighDensityTimelineRow(
                     is TimelineEntry.Meal -> {
                         val meal = entry.mealWithFoods.meal
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onToggle)
+                                .testTag("timeline_row_toggle"),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -314,44 +325,43 @@ private fun HighDensityTimelineRow(
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            IconButton(
-                                onClick = onDelete,
-                                modifier = Modifier.size(22.dp)
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = onDelete,
+                                    modifier = Modifier.size(22.dp).testTag("timeline_row_delete")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Löschen",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(2.dp))
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Löschen",
+                                    imageVector = Icons.Filled.ExpandMore,
+                                    contentDescription = if (isExpanded) "Eintrag einklappen" else "Eintrag aufklappen",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .rotate(if (isExpanded) 180f else 0f)
                                 )
                             }
                         }
 
-                        val foodNames = entry.mealWithFoods.foods.joinToString(", ") { it.name }
-                        if (foodNames.isNotEmpty()) {
-                            Text(
-                                text = foodNames,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        if (meal.notes.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Notiz: ${meal.notes}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
-                            )
+                        if (isExpanded) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            MealExpandedDetails(entry)
                         }
                     }
 
                     is TimelineEntry.Symptom -> {
                         val symptom = entry.symptom
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(onClick = onToggle)
+                                .testTag("timeline_row_toggle"),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -361,39 +371,128 @@ private fun HighDensityTimelineRow(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.error
                             )
-                            IconButton(
-                                onClick = onDelete,
-                                modifier = Modifier.size(22.dp)
-                            ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = onDelete,
+                                    modifier = Modifier.size(22.dp).testTag("timeline_row_delete")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Löschen",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(2.dp))
                                 Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Löschen",
+                                    imageVector = Icons.Filled.ExpandMore,
+                                    contentDescription = if (isExpanded) "Eintrag einklappen" else "Eintrag aufklappen",
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(15.dp)
+                                    modifier = Modifier
+                                        .size(20.dp)
+                                        .rotate(if (isExpanded) 180f else 0f)
                                 )
                             }
                         }
 
-                        val durText = symptom.durationMinutes?.let { " • $it Min" } ?: ""
-                        Text(
-                            text = "Intensität: ${symptom.intensity}/10$durText",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 11.sp
-                        )
-
-                        if (symptom.notes.isNotBlank()) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Notiz: ${symptom.notes}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 11.sp
-                            )
+                        if (isExpanded) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            SymptomExpandedDetails(entry)
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun MealExpandedDetails(entry: TimelineEntry.Meal) {
+    val meal = entry.mealWithFoods.meal
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Portion
+        if (meal.portion.isNotBlank()) {
+            Text(
+                text = "Portion: ${meal.portion}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+        // Foods
+        val foodNames = entry.mealWithFoods.foods.joinToString(", ") { it.name }
+        if (foodNames.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Lebensmittel: $foodNames",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+        // Notes
+        if (meal.notes.isNotBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Notiz: ${meal.notes}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+        // Empty-state hint when there's literally nothing to show
+        if (meal.portion.isBlank() && foodNames.isEmpty() && meal.notes.isBlank()) {
+            Text(
+                text = "Keine weiteren Angaben erfasst.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun SymptomExpandedDetails(entry: TimelineEntry.Symptom) {
+    val symptom = entry.symptom
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Intensity (already shown in the summary line, but re-stated here
+        // prominently for clarity when expanded)
+        Text(
+            text = "Intensität: ${symptom.intensity}/10",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp
+        )
+        // Duration
+        if (symptom.durationMinutes != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Dauer: ${symptom.durationMinutes} Minuten",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+        // Notes
+        if (symptom.notes.isNotBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Notiz: ${symptom.notes}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+        // Empty-state hint
+        if (symptom.durationMinutes == null && symptom.notes.isBlank()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Keine weiteren Angaben erfasst.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
         }
     }
 }
