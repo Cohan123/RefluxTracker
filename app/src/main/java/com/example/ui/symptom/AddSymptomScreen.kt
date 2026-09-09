@@ -1,11 +1,13 @@
 package com.example.ui.symptom
 
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,313 +17,586 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Healing
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.data.model.SymptomTypes
+import androidx.compose.ui.unit.sp
+import com.example.data.model.RefluxConstants
+import com.example.data.model.SymptomType
 import com.example.ui.RefluxViewModel
-import com.example.ui.components.IntensityBadge
-import com.example.ui.theme.SymptomMild
-import com.example.ui.theme.SymptomModerate
-import com.example.ui.theme.SymptomSevere
-import com.example.util.DateTimeUtils
-import kotlin.math.roundToInt
+import com.example.ui.components.DateTimePickerRow
+import com.example.ui.components.HighDensityCard
+import com.example.ui.components.SectionHeader
+import com.example.ui.meal.SelectableChip
+import com.example.ui.theme.BotanicalCardBorder
+import com.example.ui.theme.BotanicalCream
+import com.example.ui.theme.BotanicalForest
+import com.example.ui.theme.BotanicalMint
+import com.example.ui.theme.BotanicalSage
+import com.example.ui.theme.BotanicalSurface
+import com.example.ui.theme.BotanicalTextMuted
+import com.example.ui.theme.BotanicalTextPrimary
+import com.example.ui.theme.BotanicalTextSecondary
+import com.example.ui.theme.TriggerHighRed
+import com.example.ui.theme.TriggerHighRedBg
+import com.example.ui.theme.TriggerLowGreen
+import com.example.ui.theme.TriggerLowGreenBg
+import com.example.ui.theme.TriggerMediumAmber
+import com.example.ui.theme.TriggerMediumAmberBg
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun AddSymptomScreen(
     viewModel: RefluxViewModel,
+    symptomId: Long? = null,
     onNavigateBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val symptomTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
-    var selectedSymptomType by remember { mutableStateOf(SymptomTypes.SODBRENNEN) }
-    var intensityFloat by remember { mutableFloatStateOf(5.0f) }
-    var selectedDurationMinutes by remember { mutableStateOf<Int?>(null) }
-    var notes by remember { mutableStateOf("") }
+    val isEditing = symptomId != null && symptomId > 0L
 
-    val intensityInt = intensityFloat.roundToInt()
+    var selectedTimestamp by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    val selectedSymptoms = remember { mutableStateListOf<String>() }
+    val selectedActivities = remember { mutableStateListOf<String>() }
+    val selectedRemedies = remember { mutableStateListOf<String>() }
 
-    val sliderColor = when {
-        intensityInt <= 3 -> SymptomMild
-        intensityInt <= 6 -> SymptomModerate
-        else -> SymptomSevere
+    var customSymptomText by remember { mutableStateOf("") }
+    var customActivityText by remember { mutableStateOf("") }
+    var customRemedyText by remember { mutableStateOf("") }
+
+    var intensityFloat by remember { mutableFloatStateOf(5f) }
+    val intensity = intensityFloat.toInt()
+    var selectedDurationMinutes by remember { mutableIntStateOf(30) }
+    var notesText by remember { mutableStateOf("") }
+
+    // Initiale Auswahl bei neuem Symptom: Sodbrennen vorwählen
+    LaunchedEffect(Unit) {
+        if (!isEditing && selectedSymptoms.isEmpty()) {
+            selectedSymptoms.add("Sodbrennen")
+        }
+    }
+
+    // Beim Bearbeiten: Bestehenden Datensatz asynchron laden
+    LaunchedEffect(symptomId) {
+        if (isEditing && symptomId != null) {
+            val existing = viewModel.getSymptom(symptomId)
+            if (existing != null) {
+                selectedTimestamp = existing.timestamp
+                intensityFloat = existing.intensity.toFloat()
+                selectedDurationMinutes = existing.durationMinutes
+                notesText = existing.notes
+
+                selectedSymptoms.clear()
+                selectedSymptoms.addAll(existing.getSymptomList())
+
+                selectedActivities.clear()
+                selectedActivities.addAll(existing.getActivityList())
+
+                selectedRemedies.clear()
+                selectedRemedies.addAll(existing.getRemedyList())
+            }
+        }
+    }
+
+    val (intensityColor, intensityBg, intensityLabel) = when {
+        intensity <= 3 -> Triple(TriggerLowGreen, TriggerLowGreenBg, "Leicht / kaum störend")
+        intensity <= 6 -> Triple(TriggerMediumAmber, TriggerMediumAmberBg, "Mäßig / spürbar")
+        else -> Triple(TriggerHighRed, TriggerHighRedBg, "Stark / schmerzhaft")
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Symptom erfassen", fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        if (isEditing) "Symptom bearbeiten" else "Symptom erfassen",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BotanicalTextPrimary
+                    )
+                },
                 navigationIcon = {
-                    IconButton(
-                        onClick = onNavigateBack,
-                        modifier = Modifier.testTag("back_button")
-                    ) {
+                    IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Zurück"
+                            contentDescription = "Zurück",
+                            tint = BotanicalTextPrimary
                         )
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = BotanicalCream)
             )
         },
-        modifier = modifier.fillMaxSize()
-    ) { innerPadding ->
+        containerColor = BotanicalCream
+    ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .testTag("add_symptom_form"),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(paddingValues)
+                .padding(horizontal = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            // 1. Time / Date display
+            // Datum & Uhrzeit rückwirkend anpassen
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(
-                                text = "Zeitpunkt des Auftretens",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "${DateTimeUtils.formatDate(symptomTimestamp)}, ${DateTimeUtils.formatTime(symptomTimestamp)} Uhr",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
+                SectionHeader(
+                    title = "Datum & Uhrzeit",
+                    subtitle = "Rückwirkend anpassbar"
+                )
+                DateTimePickerRow(
+                    timestamp = selectedTimestamp,
+                    onTimestampChanged = { selectedTimestamp = it }
+                )
             }
 
-            // 2. Symptom Type Selector (Chips)
+            // 1. Symptomauswahl (Mehrfachauswahl)
             item {
-                Column {
-                    Text(
-                        text = "Art des Symptoms",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    FlowRow(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        SymptomTypes.ALL.forEach { type ->
-                            val isSelected = (selectedSymptomType == type)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { selectedSymptomType = type },
-                                label = { Text(type) },
-                                leadingIcon = if (isSelected) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
+                SectionHeader(
+                    title = "Aufgetretene Symptome",
+                    subtitle = "Mehrfachauswahl möglich (${selectedSymptoms.size} gewählt)"
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    RefluxConstants.STANDARD_SYMPTOMS.forEach { symptomName ->
+                        val isSelected = selectedSymptoms.contains(symptomName)
+                        MultiSelectChip(
+                            label = symptomName,
+                            selected = isSelected,
+                            activeColor = TriggerHighRed,
+                            onClick = {
+                                if (isSelected) {
+                                    if (selectedSymptoms.size > 1) {
+                                        selectedSymptoms.remove(symptomName)
                                     }
-                                } else null,
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                                    selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            )
-                        }
+                                } else {
+                                    selectedSymptoms.add(symptomName)
+                                }
+                            }
+                        )
+                    }
+
+                    // Benutzerdefinierte Symptome anzeigen
+                    selectedSymptoms.filterNot { RefluxConstants.STANDARD_SYMPTOMS.contains(it) }.forEach { customName ->
+                        MultiSelectChip(
+                            label = customName,
+                            selected = true,
+                            activeColor = TriggerHighRed,
+                            onClick = { selectedSymptoms.remove(customName) }
+                        )
+                    }
+                }
+
+                // Eigenes Symptom hinzufügen
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = customSymptomText,
+                        onValueChange = { customSymptomText = it },
+                        placeholder = { Text("Anderes Symptom ergänzen...", fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = BotanicalSurface,
+                            unfocusedContainerColor = BotanicalSurface,
+                            focusedBorderColor = TriggerHighRed,
+                            unfocusedBorderColor = BotanicalCardBorder
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Button(
+                        onClick = {
+                            val trimmed = customSymptomText.trim()
+                            if (trimmed.isNotEmpty() && !selectedSymptoms.contains(trimmed)) {
+                                selectedSymptoms.add(trimmed)
+                                customSymptomText = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = TriggerHighRed),
+                        shape = RoundedCornerShape(8.dp),
+                        enabled = customSymptomText.isNotBlank(),
+                        modifier = Modifier.height(50.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = "Hinzufügen")
                     }
                 }
             }
 
-            // 3. Intensity Slider (0..10)
+            // 2. Tätigkeiten / Situationen als Auslöser (Mehrfachauswahl)
             item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                SectionHeader(
+                    title = "Tätigkeit / Situation beim Auftreten",
+                    subtitle = "Auslöser / Begleitumstand (Mehrfachauswahl)"
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    RefluxConstants.STANDARD_ACTIVITIES.forEach { actName ->
+                        val isSelected = selectedActivities.contains(actName)
+                        MultiSelectChip(
+                            label = actName,
+                            selected = isSelected,
+                            activeColor = BotanicalForest,
+                            onClick = {
+                                if (isSelected) selectedActivities.remove(actName)
+                                else selectedActivities.add(actName)
+                            }
+                        )
+                    }
+
+                    // Benutzerdefinierte Tätigkeiten
+                    selectedActivities.filterNot { RefluxConstants.STANDARD_ACTIVITIES.contains(it) }.forEach { customAct ->
+                        MultiSelectChip(
+                            label = customAct,
+                            selected = true,
+                            activeColor = BotanicalForest,
+                            onClick = { selectedActivities.remove(customAct) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = customActivityText,
+                        onValueChange = { customActivityText = it },
+                        placeholder = { Text("Andere Situation / Tätigkeit ergänzen...", fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = BotanicalSurface,
+                            unfocusedContainerColor = BotanicalSurface,
+                            focusedBorderColor = BotanicalForest,
+                            unfocusedBorderColor = BotanicalCardBorder
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Button(
+                        onClick = {
+                            val trimmed = customActivityText.trim()
+                            if (trimmed.isNotEmpty() && !selectedActivities.contains(trimmed)) {
+                                selectedActivities.add(trimmed)
+                                customActivityText = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BotanicalForest),
+                        shape = RoundedCornerShape(8.dp),
+                        enabled = customActivityText.isNotBlank(),
+                        modifier = Modifier.height(50.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = "Hinzufügen")
+                    }
+                }
+            }
+
+            // 3. Maßnahmen gegen Sodbrennen (Mehrfachauswahl)
+            item {
+                SectionHeader(
+                    title = "Ergriffene Maßnahmen zur Linderung",
+                    subtitle = "Was hat geholfen? (Mehrfachauswahl)"
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    RefluxConstants.STANDARD_REMEDIES.forEach { remedyName ->
+                        val isSelected = selectedRemedies.contains(remedyName)
+                        MultiSelectChip(
+                            label = remedyName,
+                            selected = isSelected,
+                            activeColor = BotanicalSage,
+                            onClick = {
+                                if (isSelected) selectedRemedies.remove(remedyName)
+                                else selectedRemedies.add(remedyName)
+                            }
+                        )
+                    }
+
+                    // Benutzerdefinierte Maßnahmen
+                    selectedRemedies.filterNot { RefluxConstants.STANDARD_REMEDIES.contains(it) }.forEach { customRemedy ->
+                        MultiSelectChip(
+                            label = customRemedy,
+                            selected = true,
+                            activeColor = BotanicalSage,
+                            onClick = { selectedRemedies.remove(customRemedy) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = customRemedyText,
+                        onValueChange = { customRemedyText = it },
+                        placeholder = { Text("Individuelle Maßnahme ergänzen...", fontSize = 12.sp) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = BotanicalSurface,
+                            unfocusedContainerColor = BotanicalSurface,
+                            focusedBorderColor = BotanicalSage,
+                            unfocusedBorderColor = BotanicalCardBorder
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Button(
+                        onClick = {
+                            val trimmed = customRemedyText.trim()
+                            if (trimmed.isNotEmpty() && !selectedRemedies.contains(trimmed)) {
+                                selectedRemedies.add(trimmed)
+                                customRemedyText = ""
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = BotanicalSage),
+                        shape = RoundedCornerShape(8.dp),
+                        enabled = customRemedyText.isNotBlank(),
+                        modifier = Modifier.height(50.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = "Hinzufügen")
+                    }
+                }
+            }
+
+            // 4. Intensität Slider (1 bis 10)
+            item {
+                SectionHeader(title = "Symptomstärke (1 - 10)")
+                HighDensityCard {
+                    Column(modifier = Modifier.padding(14.dp)) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Symptomstärke (0–10)",
-                                style = MaterialTheme.typography.titleSmall,
+                                text = "Intensität: $intensity von 10",
+                                fontSize = 14.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
+                                color = intensityColor
                             )
-                            IntensityBadge(intensity = intensityInt)
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(intensityBg)
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = intensityLabel,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = intensityColor
+                                )
+                            }
                         }
 
-                        Spacer(modifier = Modifier.height(14.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
                         Slider(
                             value = intensityFloat,
                             onValueChange = { intensityFloat = it },
-                            valueRange = 0f..10f,
-                            steps = 9,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("intensity_slider"),
+                            valueRange = 1f..10f,
+                            steps = 8,
                             colors = SliderDefaults.colors(
-                                thumbColor = sliderColor,
-                                activeTrackColor = sliderColor
-                            )
+                                thumbColor = intensityColor,
+                                activeTrackColor = intensityColor,
+                                inactiveTrackColor = BotanicalCardBorder
+                            ),
+                            modifier = Modifier.testTag("symptom_intensity_slider")
                         )
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("0 (Keine)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("5 (Mittel)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("10 (Sehr stark)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
                     }
                 }
             }
 
-            // 4. Optional Duration
+            // 5. Geschätzte Dauer
             item {
-                Column {
-                    Text(
-                        text = "Dauer (optional)",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(
-                            null to "Keine Angabe",
-                            15 to "15 Min",
-                            30 to "30 Min",
-                            60 to "1 Stunde",
-                            120 to "2 Stunden",
-                            240 to "Mehrere Std."
-                        ).forEach { (minutes, label) ->
-                            val isSelected = (selectedDurationMinutes == minutes)
-                            FilterChip(
-                                selected = isSelected,
-                                onClick = { selectedDurationMinutes = minutes },
-                                label = { Text(label) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer
-                                )
-                            )
-                        }
+                SectionHeader(title = "Geschätzte Dauer")
+                val durations = listOf(15, 30, 60, 120, 240)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    durations.forEach { d ->
+                        val isSelected = selectedDurationMinutes == d
+                        val label = if (d < 60) "${d}m" else "${d / 60}h"
+                        SelectableChip(
+                            label = label,
+                            selected = isSelected,
+                            onClick = { selectedDurationMinutes = d },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
 
-            // 5. Notes
+            // 6. Optionale Notizen
             item {
+                SectionHeader(title = "Optionale Notizen")
                 OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("symptom_notes_field"),
-                    label = { Text("Notiz (optional)") },
-                    placeholder = { Text("Z.B. im Liegen aufgetreten, nach dem Sport...") },
-                    shape = RoundedCornerShape(12.dp),
-                    maxLines = 3
+                    value = notesText,
+                    onValueChange = { notesText = it },
+                    placeholder = { Text("z.B. nach dem Bücken aufgetreten, warmes Wasser half sofort...", fontSize = 12.sp) },
+                    minLines = 2,
+                    maxLines = 3,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = BotanicalSurface,
+                        unfocusedContainerColor = BotanicalSurface,
+                        focusedBorderColor = TriggerHighRed,
+                        unfocusedBorderColor = BotanicalCardBorder
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
 
-            // 6. Save Button
+            // 7. Speichern Button
             item {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Button(
                     onClick = {
-                        viewModel.addSymptom(
-                            timestamp = symptomTimestamp,
-                            symptomType = selectedSymptomType,
-                            intensity = intensityInt,
-                            durationMinutes = selectedDurationMinutes,
-                            notes = notes.trim(),
-                            onSuccess = onNavigateBack
-                        )
+                        val symptomsToSave = if (selectedSymptoms.isNotEmpty()) {
+                            selectedSymptoms.toList()
+                        } else {
+                            listOf("Sodbrennen")
+                        }
+
+                        if (isEditing && symptomId != null) {
+                            viewModel.updateSymptom(
+                                symptomId = symptomId,
+                                symptoms = symptomsToSave,
+                                intensity = intensity,
+                                durationMinutes = selectedDurationMinutes,
+                                timestamp = selectedTimestamp,
+                                notes = notesText.trim(),
+                                activities = selectedActivities.toList(),
+                                remedies = selectedRemedies.toList()
+                            )
+                        } else {
+                            viewModel.addSymptom(
+                                symptoms = symptomsToSave,
+                                intensity = intensity,
+                                durationMinutes = selectedDurationMinutes,
+                                timestamp = selectedTimestamp,
+                                notes = notesText.trim(),
+                                activities = selectedActivities.toList(),
+                                remedies = selectedRemedies.toList()
+                            )
+                        }
+                        onNavigateBack()
                     },
+                    colors = ButtonDefaults.buttonColors(containerColor = TriggerHighRed),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(54.dp)
-                        .testTag("save_symptom_button"),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                        .height(48.dp)
+                        .testTag("submit_symptom_button")
                 ) {
-                    Icon(imageVector = Icons.Default.LocalFireDepartment, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (isEditing) Icons.Default.Healing else Icons.Default.WarningAmber,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Symptom speichern",
-                        style = MaterialTheme.typography.titleMedium,
+                        text = if (isEditing) "Änderungen speichern" else "Symptom speichern",
+                        fontSize = 15.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
+                Spacer(modifier = Modifier.height(16.dp))
             }
+        }
+    }
+}
+
+@Composable
+fun MultiSelectChip(
+    label: String,
+    selected: Boolean,
+    activeColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bg = if (selected) activeColor else BotanicalSurface
+    val border = if (selected) activeColor else BotanicalCardBorder
+    val textColor = if (selected) BotanicalCream else BotanicalTextPrimary
+
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .border(1.dp, border, RoundedCornerShape(8.dp))
+            .clickable { onClick() },
+        color = bg
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = BotanicalCream,
+                    modifier = Modifier.size(14.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+            }
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                color = textColor
+            )
         }
     }
 }

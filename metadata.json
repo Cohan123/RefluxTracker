@@ -1,6 +1,6 @@
 {
   "name": "RefluxTrack",
-  "description": "Persönlicher Reflux- und GERD-Tracker zur individuellen Erfassung von Mahlzeiten, Symptomen und statistischen Trigger-Analysen.",
+  "description": "Persönlicher Reflux- und GERD-Tracker zur Identifizierung individueller Trigger anhand von Mahlzeiten- und Symptomprotokollen.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

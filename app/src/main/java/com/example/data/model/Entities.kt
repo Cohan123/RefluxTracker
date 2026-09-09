@@ -7,35 +7,62 @@ import androidx.room.Junction
 import androidx.room.PrimaryKey
 import androidx.room.Relation
 
-@Entity(
-    tableName = "foods",
-    indices = [Index(value = ["name"], unique = true)]
-)
+enum class MealType(val displayName: String) {
+    FRUEHSTUECK("Frühstück"),
+    MITTAGESSEN("Mittagessen"),
+    ABENDESSEN("Abendessen"),
+    SNACK("Snack"),
+    GETRAENK("Getränk")
+}
+
+enum class PortionSize(val displayName: String) {
+    KLEIN("Kleine Portion"),
+    MITTEL("Mittlere Portion"),
+    GROSS("Große Portion")
+}
+
+enum class SymptomType(val displayName: String) {
+    SODBRENNEN("Sodbrennen"),
+    SAURES_AUFSTOSSEN("Saures Aufstoßen"),
+    MAGENDRUCK("Magendruck / Völlegefühl"),
+    HALSREIZUNG("Halskratzen / Räusperzwang"),
+    HEISERKEIT("Heiserkeit"),
+    HUSTEN("Reizhusten"),
+    BRUSTSCHMERZ("Druck in der Brust"),
+    SCHLUCKRESCHWERDEN("Schluckbeschwerden"),
+    SONSTIGES("Sonstiges Symptom")
+}
+
+enum class TriggerLikelihood(val label: String) {
+    HOCH("Hoher Zusammenhang"),
+    MITTEL("Mittlerer Zusammenhang"),
+    GERING("Geringer Zusammenhang"),
+    UNBEKANNT("Noch zu wenig Daten")
+}
+
+@Entity(tableName = "foods")
 data class FoodEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
     val name: String,
-    val category: String,
-    val iconName: String = "restaurant",
-    val isCustom: Boolean = false
+    val category: String = "Allgemein",
+    val defaultPortion: PortionSize = PortionSize.MITTEL
 )
 
-@Entity(
-    tableName = "meals",
-    indices = [Index(value = ["timestamp"])]
-)
+@Entity(tableName = "meals")
 data class MealEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val timestamp: Long,
-    val mealType: String, // "Frühstück", "Mittagessen", "Abendessen", "Snack", "Sonstiges"
-    val portion: String = "", // "Normal", "Groß", "Klein"
-    val notes: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val timestamp: Long = System.currentTimeMillis(),
+    val mealType: MealType,
+    val portionSize: PortionSize = PortionSize.MITTEL,
+    val notes: String = ""
 )
 
 @Entity(
     tableName = "meal_food_cross_ref",
     primaryKeys = ["mealId", "foodId"],
-    indices = [Index("mealId"), Index("foodId")]
+    indices = [Index("foodId")]
 )
 data class MealFoodCrossRef(
     val mealId: Long,
@@ -56,60 +83,89 @@ data class MealWithFoods(
     val foods: List<FoodEntity>
 )
 
-@Entity(
-    tableName = "symptoms",
-    indices = [Index(value = ["timestamp"])]
-)
-data class SymptomEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val timestamp: Long,
-    val symptomType: String, // "Sodbrennen", "Säurerückfluss", "Aufstoßen", etc.
-    val intensity: Int, // 0..10
-    val durationMinutes: Int? = null,
-    val notes: String = "",
-    val createdAt: Long = System.currentTimeMillis()
-)
+object RefluxConstants {
+    val STANDARD_SYMPTOMS = listOf(
+        "Sodbrennen",
+        "Saures Aufstoßen",
+        "Magendruck / Völlegefühl",
+        "Druckgefühl / Druck in der Brust",
+        "Übelkeit",
+        "Halskratzen / Räusperzwang",
+        "Heiserkeit",
+        "Reizhusten",
+        "Schluckbeschwerden",
+        "Brennen im Rachen",
+        "Bitterer Geschmack",
+        "Sonstiges Symptom"
+    )
 
-// Supported Symptom types as defined in specifications
-object SymptomTypes {
-    const val SODBRENNEN = "Sodbrennen"
-    const val SAEURERUECKFLUSS = "Säurerückfluss"
-    const val AUFSTOSSEN = "Aufstoßen"
-    const val RAEUSPERN = "Räuspern"
-    const val HUSTEN = "Husten"
-    const val HALSBRENNEN = "Halsbrennen"
-    const val DRUCKGEFUEHL = "Druckgefühl"
-    const val UEBELKEIT = "Übelkeit"
-    const val BLAEHUNGEN = "Blähungen"
-    const val SCHLAFPROBLEME = "Schlafprobleme"
+    val STANDARD_ACTIVITIES = listOf(
+        "Liegen",
+        "Sitzen",
+        "Stehen",
+        "Sport / Bewegung",
+        "Bücken",
+        "Schlafen",
+        "Gehen",
+        "Direkt nach dem Essen",
+        "Stress / Hektik",
+        "Enge Kleidung"
+    )
 
-    val ALL = listOf(
-        SODBRENNEN,
-        SAEURERUECKFLUSS,
-        AUFSTOSSEN,
-        RAEUSPERN,
-        HUSTEN,
-        HALSBRENNEN,
-        DRUCKGEFUEHL,
-        UEBELKEIT,
-        BLAEHUNGEN,
-        SCHLAFPROBLEME
+    val STANDARD_REMEDIES = listOf(
+        "Wasser getrunken",
+        "Aufrecht hingesetzt",
+        "Aufgestanden",
+        "Etwas gegessen",
+        "Bestimmte Lebensmittel vermieden",
+        "Medikament eingenommen",
+        "Spaziergang gemacht",
+        "Schlafposition geändert / Oberkörper hoch",
+        "Kleidung gelockert",
+        "Kräutertee getrunken"
     )
 }
 
-// Supported Meal types
-object MealTypes {
-    const val FRUEHSTUECK = "Frühstück"
-    const val MITTAGESSEN = "Mittagessen"
-    const val ABENDESSEN = "Abendessen"
-    const val SNACK = "Snack"
-    const val SONSTIGES = "Sonstiges"
+@Entity(tableName = "symptoms")
+data class SymptomEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val timestamp: Long = System.currentTimeMillis(),
+    val symptomType: SymptomType = SymptomType.SODBRENNEN,
+    val intensity: Int, // 1 bis 10
+    val durationMinutes: Int = 30,
+    val notes: String = "",
+    val symptoms: String = "", // Kommagetrennte Liste der ausgewählten Symptome
+    val activities: String = "", // Kommagetrennte Liste der Tätigkeiten/Situationen
+    val remedies: String = "" // Kommagetrennte Liste der ergriffenen Maßnahmen
+) {
+    fun getSymptomList(): List<String> {
+        val list = symptoms.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        return if (list.isNotEmpty()) list else listOf(symptomType.displayName)
+    }
 
-    val ALL = listOf(
-        FRUEHSTUECK,
-        MITTAGESSEN,
-        ABENDESSEN,
-        SNACK,
-        SONSTIGES
-    )
+    fun getActivityList(): List<String> {
+        return activities.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    fun getRemedyList(): List<String> {
+        return remedies.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+    }
+}
+
+data class FoodTriggerAnalysis(
+    val foodId: Long,
+    val foodName: String,
+    val category: String,
+    val timesConsumed: Int,
+    val timesTriggered: Int,
+    val triggerPercentage: Int, // 0 - 100
+    val avgIntensity: Double,
+    val avgDelayMinutes: Long,
+    val likelihood: TriggerLikelihood
+)
+
+sealed class TimelineItem(val timestamp: Long) {
+    data class MealItem(val mealWithFoods: MealWithFoods) : TimelineItem(mealWithFoods.meal.timestamp)
+    data class SymptomItem(val symptom: SymptomEntity) : TimelineItem(symptom.timestamp)
 }

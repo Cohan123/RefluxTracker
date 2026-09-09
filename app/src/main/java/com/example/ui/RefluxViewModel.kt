@@ -2,185 +2,247 @@ package com.example.ui
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.analysis.FoodTriggerAnalysis
-import com.example.analysis.TriggerAnalysisEngine
-import com.example.data.local.AppDatabase
+import com.example.data.local.RefluxDatabase
 import com.example.data.model.FoodEntity
+import com.example.data.model.FoodTriggerAnalysis
+import com.example.data.model.MealEntity
+import com.example.data.model.MealType
 import com.example.data.model.MealWithFoods
+import com.example.data.model.PortionSize
 import com.example.data.model.SymptomEntity
+import com.example.data.model.SymptomType
+import com.example.data.model.TimelineItem
 import com.example.data.repository.RefluxRepository
-import com.example.data.repository.TimelineEntry
-import com.example.util.DateTimeUtils
-import kotlinx.coroutines.ExperimentalCoroutinesApi
+import com.example.util.CsvBackupManager
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
-data class DashboardUiState(
-    val todayMealsCount: Int = 0,
-    val todaySymptomsCount: Int = 0,
-    val todayAvgIntensity: Double? = null,
-    val currentDayOf14: Int = 1,
-    val recentTimeline: List<TimelineEntry> = emptyList(),
-    val topTriggers: List<FoodTriggerAnalysis> = emptyList(),
-    val totalObservations: Int = 0
-)
+class RefluxViewModel(application: Application) : AndroidViewModel(application) {
 
-class RefluxViewModel(
-    application: Application,
     private val repository: RefluxRepository
-) : AndroidViewModel(application) {
+
+    val allFoods: StateFlow<List<FoodEntity>>
+    val allMealsWithFoods: StateFlow<List<MealWithFoods>>
+    val allSymptoms: StateFlow<List<SymptomEntity>>
+    val timelineItems: StateFlow<List<TimelineItem>>
+
+    private val _triggerAnalysis = MutableStateFlow<List<FoodTriggerAnalysis>>(emptyList())
+    val triggerAnalysis: StateFlow<List<FoodTriggerAnalysis>> = _triggerAnalysis.asStateFlow()
+
+    private val _analysisDays = MutableStateFlow(14)
+    val analysisDays: StateFlow<Int> = _analysisDays.asStateFlow()
 
     init {
+        val db = RefluxDatabase.getDatabase(application)
+        repository = RefluxRepository(db.refluxDao())
+
+        allFoods = repository.allFoods.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
+        allMealsWithFoods = repository.allMealsWithFoods.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
+        allSymptoms = repository.allSymptoms.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
+        timelineItems = repository.timelineItems.stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            emptyList()
+        )
+
+        refreshAnalysis()
+    }
+
+    fun setAnalysisDays(days: Int) {
+        _analysisDays.value = days
+        refreshAnalysis()
+    }
+
+    fun refreshAnalysis() {
         viewModelScope.launch {
-            repository.ensureDefaultFoods()
+            _triggerAnalysis.value = repository.analyzeTriggers(lookbackDays = _analysisDays.value)
         }
     }
 
-    val allFoods: StateFlow<List<FoodEntity>> = repository.allFoods
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    suspend fun getMealWithFoods(mealId: Long): MealWithFoods? {
+        return repository.getMealWithFoodsById(mealId)
+    }
 
-    val allMeals: StateFlow<List<MealWithFoods>> = repository.allMealsWithFoods
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val allSymptoms: StateFlow<List<SymptomEntity>> = repository.allSymptoms
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Selected day offset: 0 for today, -1 for yesterday, etc.
-    private val _selectedDayOffset = MutableStateFlow(0)
-    val selectedDayOffset: StateFlow<Int> = _selectedDayOffset.asStateFlow()
-
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val timelineForSelectedDay: StateFlow<List<TimelineEntry>> = _selectedDayOffset
-        .flatMapLatest { offset ->
-            val (startMs, endMs) = DateTimeUtils.getStartAndEndOfDay(offset)
-            repository.getDayTimeline(startMs, endMs)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Trigger analysis results derived from all meals and symptoms
-    val triggerAnalyses: StateFlow<List<FoodTriggerAnalysis>> = combine(allMeals, allSymptoms) { meals, symptoms ->
-        TriggerAnalysisEngine.analyze(meals, symptoms)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Dashboard State
-    val dashboardState: StateFlow<DashboardUiState> = combine(
-        allMeals,
-        allSymptoms,
-        triggerAnalyses
-    ) { meals, symptoms, analyses ->
-        val (todayStart, todayEnd) = DateTimeUtils.getStartAndEndOfDay(0)
-
-        val todayMeals = meals.filter { it.meal.timestamp in todayStart..todayEnd }
-        val todaySymptoms = symptoms.filter { it.timestamp in todayStart..todayEnd }
-
-        val todayAvg = if (todaySymptoms.isNotEmpty()) {
-            todaySymptoms.map { it.intensity }.average()
-        } else {
-            null
-        }
-
-        // Calculate 14-day tracking progress
-        val earliestTs = listOfNotNull(
-            meals.minOfOrNull { it.meal.timestamp },
-            symptoms.minOfOrNull { it.timestamp }
-        ).minOrNull()
-
-        val dayOf14 = if (earliestTs != null) {
-            DateTimeUtils.calculateDaysBetween(earliestTs, System.currentTimeMillis()).coerceIn(1, 14)
-        } else {
-            1
-        }
-
-        // Today's recent timeline preview
-        val recentTimeline = (todayMeals.map { TimelineEntry.Meal(it) } +
-                todaySymptoms.map { TimelineEntry.Symptom(it) })
-            .sortedByDescending { it.timestamp }
-            .take(5)
-
-        // Top triggers (those with score > 0, limited to 3 for preview)
-        val topTriggers = analyses.filter { it.score > 0 }.take(3)
-
-        DashboardUiState(
-            todayMealsCount = todayMeals.size,
-            todaySymptomsCount = todaySymptoms.size,
-            todayAvgIntensity = todayAvg,
-            currentDayOf14 = dayOf14,
-            recentTimeline = recentTimeline,
-            topTriggers = topTriggers,
-            totalObservations = meals.size + symptoms.size
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardUiState())
-
-    fun setSelectedDayOffset(offset: Int) {
-        _selectedDayOffset.value = offset
+    suspend fun getSymptom(symptomId: Long): SymptomEntity? {
+        return repository.getSymptomById(symptomId)
     }
 
     fun addMeal(
-        timestamp: Long,
-        mealType: String,
-        portion: String,
-        notes: String,
+        mealType: MealType,
+        portionSize: PortionSize,
         foodIds: List<Long>,
-        onSuccess: () -> Unit = {}
+        timestamp: Long = System.currentTimeMillis(),
+        notes: String = ""
     ) {
         viewModelScope.launch {
-            repository.addMeal(timestamp, mealType, portion, notes, foodIds)
-            onSuccess()
+            val meal = MealEntity(
+                timestamp = timestamp,
+                mealType = mealType,
+                portionSize = portionSize,
+                notes = notes
+            )
+            repository.addMeal(meal, foodIds)
+            refreshAnalysis()
+        }
+    }
+
+    fun updateMeal(
+        mealId: Long,
+        mealType: MealType,
+        portionSize: PortionSize,
+        foodIds: List<Long>,
+        timestamp: Long,
+        notes: String = ""
+    ) {
+        viewModelScope.launch {
+            val meal = MealEntity(
+                id = mealId,
+                timestamp = timestamp,
+                mealType = mealType,
+                portionSize = portionSize,
+                notes = notes
+            )
+            repository.updateMeal(meal, foodIds)
+            refreshAnalysis()
         }
     }
 
     fun deleteMeal(mealId: Long) {
         viewModelScope.launch {
             repository.deleteMeal(mealId)
+            refreshAnalysis()
         }
     }
 
     fun addSymptom(
-        timestamp: Long,
-        symptomType: String,
+        symptoms: List<String>,
         intensity: Int,
-        durationMinutes: Int?,
-        notes: String,
-        onSuccess: () -> Unit = {}
+        durationMinutes: Int = 30,
+        timestamp: Long = System.currentTimeMillis(),
+        notes: String = "",
+        activities: List<String> = emptyList(),
+        remedies: List<String> = emptyList()
     ) {
         viewModelScope.launch {
-            repository.addSymptom(timestamp, symptomType, intensity, durationMinutes, notes)
-            onSuccess()
+            val primaryType = symptoms.firstOrNull()?.let { name ->
+                SymptomType.values().find {
+                    it.displayName.equals(name, ignoreCase = true) ||
+                    it.name.equals(name, ignoreCase = true)
+                }
+            } ?: SymptomType.SODBRENNEN
+
+            val symptom = SymptomEntity(
+                timestamp = timestamp,
+                symptomType = primaryType,
+                intensity = intensity,
+                durationMinutes = durationMinutes,
+                notes = notes,
+                symptoms = symptoms.joinToString(", "),
+                activities = activities.joinToString(", "),
+                remedies = remedies.joinToString(", ")
+            )
+            repository.addSymptom(symptom)
+            refreshAnalysis()
+        }
+    }
+
+    fun updateSymptom(
+        symptomId: Long,
+        symptoms: List<String>,
+        intensity: Int,
+        durationMinutes: Int = 30,
+        timestamp: Long,
+        notes: String = "",
+        activities: List<String> = emptyList(),
+        remedies: List<String> = emptyList()
+    ) {
+        viewModelScope.launch {
+            val primaryType = symptoms.firstOrNull()?.let { name ->
+                SymptomType.values().find {
+                    it.displayName.equals(name, ignoreCase = true) ||
+                    it.name.equals(name, ignoreCase = true)
+                }
+            } ?: SymptomType.SODBRENNEN
+
+            val symptom = SymptomEntity(
+                id = symptomId,
+                timestamp = timestamp,
+                symptomType = primaryType,
+                intensity = intensity,
+                durationMinutes = durationMinutes,
+                notes = notes,
+                symptoms = symptoms.joinToString(", "),
+                activities = activities.joinToString(", "),
+                remedies = remedies.joinToString(", ")
+            )
+            repository.updateSymptom(symptom)
+            refreshAnalysis()
         }
     }
 
     fun deleteSymptom(symptomId: Long) {
         viewModelScope.launch {
             repository.deleteSymptom(symptomId)
+            refreshAnalysis()
         }
     }
 
-    fun addCustomFood(name: String, category: String = "Eigene Lebensmittel", onAdded: (Long) -> Unit = {}) {
+    suspend fun exportCsvData(): String = withContext(Dispatchers.IO) {
+        val meals = repository.getAllMealsSync()
+        val symptoms = repository.getAllSymptomsSync()
+        CsvBackupManager.exportToCsv(meals, symptoms)
+    }
+
+    fun validateCsvData(csvContent: String): CsvBackupManager.ValidationResult {
+        return CsvBackupManager.validateCsv(csvContent)
+    }
+
+    suspend fun importCsvData(csvContent: String, skipDuplicates: Boolean = true): CsvBackupManager.ImportResult = withContext(Dispatchers.IO) {
+        val result = CsvBackupManager.importCsv(csvContent, repository, skipDuplicates)
+        refreshAnalysis()
+        result
+    }
+
+    fun addNewFood(name: String, category: String = "Allgemein"): Long {
+        var newId = 0L
         viewModelScope.launch {
-            val id = repository.insertCustomFood(name, category)
-            onAdded(id)
+            newId = repository.insertFood(FoodEntity(name = name.trim(), category = category.trim()))
         }
+        return newId
     }
 
-    companion object {
-        fun provideFactory(application: Application): ViewModelProvider.Factory {
-            return object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    val db = AppDatabase.getInstance(application)
-                    val repository = RefluxRepository.create(db)
-                    return RefluxViewModel(application, repository) as T
-                }
-            }
+    suspend fun findOrCreateFood(name: String): Long {
+        val trimmed = name.trim()
+        val existing = repository.getFoodByName(trimmed)
+        return existing?.id ?: repository.insertFood(FoodEntity(name = trimmed))
+    }
+
+    fun deleteFood(food: FoodEntity) {
+        viewModelScope.launch {
+            repository.deleteFood(food)
+            refreshAnalysis()
         }
     }
 }

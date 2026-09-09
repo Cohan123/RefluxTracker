@@ -2,9 +2,10 @@ package com.example.analysis
 
 import com.example.data.model.FoodEntity
 import com.example.data.model.MealEntity
+import com.example.data.model.MealType
 import com.example.data.model.MealWithFoods
 import com.example.data.model.SymptomEntity
-import com.example.data.model.SymptomTypes
+import com.example.data.model.SymptomType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -12,14 +13,14 @@ import org.junit.Test
 class TriggerAnalysisEngineTest {
 
     @Test
-    fun `test coffee trigger correlation example from user prompt`() {
+    fun `test coffee trigger correlation example`() {
         val coffee = FoodEntity(id = 1L, name = "Kaffee", category = "Getränke")
         val bread = FoodEntity(id = 2L, name = "Brot", category = "Milch & Getreide")
 
         val meals = mutableListOf<MealWithFoods>()
         val symptoms = mutableListOf<SymptomEntity>()
 
-        val baseTime = 1700000000000L // arbitrary base time
+        val baseTime = 1700000000000L
         val hourMs = 3600 * 1000L
 
         // Coffee consumed 12 times
@@ -29,7 +30,7 @@ class TriggerAnalysisEngineTest {
             val meal = MealEntity(
                 id = (i + 1).toLong(),
                 timestamp = mealTime,
-                mealType = "Frühstück"
+                mealType = MealType.FRUEHSTUECK
             )
             meals.add(MealWithFoods(meal = meal, foods = listOf(coffee, bread)))
 
@@ -40,7 +41,7 @@ class TriggerAnalysisEngineTest {
                     SymptomEntity(
                         id = (i + 1).toLong(),
                         timestamp = symptomTime,
-                        symptomType = SymptomTypes.SODBRENNEN,
+                        symptomType = SymptomType.SODBRENNEN,
                         intensity = 7
                     )
                 )
@@ -66,7 +67,7 @@ class TriggerAnalysisEngineTest {
         val mealTime = 1700000000000L
         val meals = listOf(
             MealWithFoods(
-                meal = MealEntity(id = 1L, timestamp = mealTime, mealType = "Snack"),
+                meal = MealEntity(id = 1L, timestamp = mealTime, mealType = MealType.SNACK),
                 foods = listOf(apple)
             )
         )
@@ -74,7 +75,7 @@ class TriggerAnalysisEngineTest {
             SymptomEntity(
                 id = 1L,
                 timestamp = mealTime + (45 * 60 * 1000L),
-                symptomType = SymptomTypes.SODBRENNEN,
+                symptomType = SymptomType.SODBRENNEN,
                 intensity = 5
             )
         )

@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item
-        android:width="66dp"
-        android:height="66dp"
-        android:drawable="@drawable/refluxtrack_icon_1788772039745"
-        android:gravity="center" />
-</layer-list>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,24C42.95,24 34,32.95 34,44c0,8.28 5.04,15.38 12.23,18.36L44,84h20l-2.23-21.64C68.96,59.38 74,52.28 74,44C74,32.95 65.05,24 54,24z M54,58c-7.73,0 -14,-6.27 -14,-14s6.27,-14 14,-14s14,6.27 14,14S61.73,58 54,58z" />
+</vector>
