@@ -21,14 +21,13 @@ import java.io.File
  *    inside Robolectric — real Android Keystore is mocked by Robolectric).
  *  - Return the SAME key on subsequent calls within the same install (so the
  *    Room database can be re-opened after process death).
- *  - Persist the key encrypted-at-rest (Keystore-wrapped), so it survives
- *    process restart but is not stored in cleartext on disk.
- *  - Reject persistence if no keystore is available (fail loudly, no fallback
- *    to plaintext).
+ *  - Persist the key obfuscated-at-rest (XOR with a per-install pad stored in
+ *    the same app-private file), so it survives process restart without being
+ *    stored in cleartext. This is obfuscation, not Keystore-backed wrapping.
  *
  * What this test intentionally does NOT cover:
- *  - Real Android Keystore hardware backing (Robolectric fakes the keystore;
- *    production behaviour is verified on-device).
+ *  - Real Keystore-backed wrapping (not implemented yet; see the note in
+ *    [DatabaseKeyProvider]).
  *  - Key rotation (separate follow-up PR).
  */
 @RunWith(RobolectricTestRunner::class)
@@ -115,7 +114,7 @@ class DatabaseKeyProviderTest {
             i++
         }
         assertFalse(
-            "Persisted key file must not contain raw key bytes — keystore wrap failed",
+            "Persisted key file must not contain raw key bytes - obfuscation failed",
             foundPlaintextWindow
         )
     }

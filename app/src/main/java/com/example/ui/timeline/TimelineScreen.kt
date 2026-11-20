@@ -23,7 +23,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -45,9 +48,11 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.SymptomTypesJson
 import com.example.data.repository.TimelineEntry
 import com.example.ui.RefluxViewModel
 import com.example.ui.components.IntensityBadge
@@ -61,6 +66,8 @@ fun TimelineScreen(
     viewModel: RefluxViewModel,
     onNavigateToAddMeal: () -> Unit,
     onNavigateToAddSymptom: () -> Unit,
+    onNavigateToEditMeal: (Long) -> Unit,
+    onNavigateToEditSymptom: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val selectedOffset by viewModel.selectedDayOffset.collectAsStateWithLifecycle()
@@ -74,7 +81,7 @@ fun TimelineScreen(
         when (selectedOffset) {
             0 -> "Heute, ${DateTimeUtils.formatShortDate(currentCal.timeInMillis)}"
             -1 -> "Gestern, ${DateTimeUtils.formatShortDate(currentCal.timeInMillis)}"
-            else -> DateTimeUtils.formatDate(currentCal.timeInMillis)
+            else -> DateTimeUtils.formatDateWithYear(currentCal.timeInMillis)
         }
     }
 
@@ -216,24 +223,73 @@ fun TimelineScreen(
                 }
             }
         } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(0.dp)
-            ) {
-                itemsIndexed(timelineEntries) { index, entry ->
-                    HighDensityTimelineRow(
-                        entry = entry,
-                        isLast = index == timelineEntries.size - 1,
-                        isExpanded = expansionState.isExpanded(entry.timestamp),
-                        onToggle = { expansionState.toggle(entry.timestamp) },
-                        onDelete = {
-                            when (entry) {
-                                is TimelineEntry.Meal -> viewModel.deleteMeal(entry.mealWithFoods.meal.id)
-                                is TimelineEntry.Symptom -> viewModel.deleteSymptom(entry.symptom.id)
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onNavigateToAddMeal,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .testTag("timeline_add_meal_button"),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Restaurant,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("+ Mahlzeit")
+                    }
+                    Button(
+                        onClick = onNavigateToAddSymptom,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(44.dp)
+                            .testTag("timeline_add_symptom_button"),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.LocalFireDepartment,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("+ Symptom")
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(0.dp)
+                ) {
+                    itemsIndexed(timelineEntries) { index, entry ->
+                        HighDensityTimelineRow(
+                            entry = entry,
+                            isLast = index == timelineEntries.size - 1,
+                            isExpanded = expansionState.isExpanded(entry.timestamp),
+                            onToggle = { expansionState.toggle(entry.timestamp) },
+                            onEdit = when (entry) {
+                                is TimelineEntry.Meal -> {
+                                    { onNavigateToEditMeal(entry.mealWithFoods.meal.id) }
+                                }
+                                is TimelineEntry.Symptom -> {
+                                    { onNavigateToEditSymptom(entry.symptom.id) }
+                                }
+                            },
+                            onDelete = {
+                                when (entry) {
+                                    is TimelineEntry.Meal -> viewModel.deleteMeal(entry.mealWithFoods.meal.id)
+                                    is TimelineEntry.Symptom -> viewModel.deleteSymptom(entry.symptom.id)
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -246,7 +302,8 @@ private fun HighDensityTimelineRow(
     isLast: Boolean,
     isExpanded: Boolean,
     onToggle: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onEdit: (() -> Unit)? = null
 ) {
     val isMeal = entry is TimelineEntry.Meal
     val nodeColor = if (isMeal) MetricMealsBg else MetricIntensityBg
@@ -326,6 +383,20 @@ private fun HighDensityTimelineRow(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                onEdit?.let { edit ->
+                                    IconButton(
+                                        onClick = edit,
+                                        modifier = Modifier.size(22.dp).testTag("timeline_row_edit")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Bearbeiten",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                }
                                 IconButton(
                                     onClick = onDelete,
                                     modifier = Modifier.size(22.dp).testTag("timeline_row_delete")
@@ -366,12 +437,31 @@ private fun HighDensityTimelineRow(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = symptom.symptomType,
+                                text = SymptomTypesJson
+                                    .decodeOrPrimary(symptom.symptomTypesJson, symptom.symptomType)
+                                    .joinToString(", "),
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.error
+                                color = MaterialTheme.colorScheme.error,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
                             )
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                onEdit?.let { edit ->
+                                    IconButton(
+                                        onClick = edit,
+                                        modifier = Modifier.size(22.dp).testTag("timeline_row_edit")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Bearbeiten",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                }
                                 IconButton(
                                     onClick = onDelete,
                                     modifier = Modifier.size(22.dp).testTag("timeline_row_delete")
@@ -455,7 +545,20 @@ private fun MealExpandedDetails(entry: TimelineEntry.Meal) {
 @Composable
 private fun SymptomExpandedDetails(entry: TimelineEntry.Symptom) {
     val symptom = entry.symptom
+    val typeNames = SymptomTypesJson.decodeOrPrimary(
+        symptom.symptomTypesJson,
+        symptom.symptomType
+    )
     Column(modifier = Modifier.fillMaxWidth()) {
+        if (typeNames.size > 1) {
+            Text(
+                text = "Symptomarten: ${typeNames.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+        }
         // Intensity (already shown in the summary line, but re-stated here
         // prominently for clarity when expanded)
         Text(
@@ -474,6 +577,26 @@ private fun SymptomExpandedDetails(entry: TimelineEntry.Symptom) {
                 fontSize = 12.sp
             )
         }
+        // Activities
+        if (entry.activities.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Tätigkeiten: ${entry.activities.joinToString(", ") { it.name }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
+        // Remedies
+        if (entry.remedies.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Maßnahmen: ${entry.remedies.joinToString(", ") { it.name }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+        }
         // Notes
         if (symptom.notes.isNotBlank()) {
             Spacer(modifier = Modifier.height(4.dp))
@@ -485,7 +608,12 @@ private fun SymptomExpandedDetails(entry: TimelineEntry.Symptom) {
             )
         }
         // Empty-state hint
-        if (symptom.durationMinutes == null && symptom.notes.isBlank()) {
+        if (symptom.durationMinutes == null &&
+            symptom.notes.isBlank() &&
+            entry.activities.isEmpty() &&
+            entry.remedies.isEmpty() &&
+            typeNames.size <= 1
+        ) {
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "Keine weiteren Angaben erfasst.",

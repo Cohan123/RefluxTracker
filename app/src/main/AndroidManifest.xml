@@ -2,6 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:allowBackup="false"
@@ -16,6 +17,7 @@
             android:name="com.example.MainActivity"
             android:exported="true"
             android:label="@string/app_name"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.RefluxTracker">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -39,6 +41,16 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="com.example.refluxtracker.ACTION_DAILY_REMINDER" />
+            </intent-filter>
+        </receiver>
+
+        <!-- AlarmManager alarms do not survive a reboot or an app update. -->
+        <receiver
+            android:name="com.example.reminder.ReminderBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
     </application>

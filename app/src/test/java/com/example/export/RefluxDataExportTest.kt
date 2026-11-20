@@ -62,6 +62,7 @@ class RefluxDataExportTest {
         val foodKaffee = db.foodDao().getFoodByName("Kaffee")!!
         // Use the repository path:
         val repository = com.example.data.repository.RefluxRepository.create(db)
+        repository.ensureDefaultCatalogs()
         repository.addMeal(
             timestamp = 1700000000000L,
             mealType = "Frühstück",
@@ -69,12 +70,17 @@ class RefluxDataExportTest {
             notes = "schnell getrunken",
             foodIds = listOf(foodKaffee.id)
         )
+        val sitzen = db.activityDao().getActivityByName("Sitzen")!!.id
+        val wasser = db.remedyDao().getRemedyByName("Wasser")!!.id
         repository.addSymptom(
             timestamp = 1700003600000L, // ~1h später
             symptomType = "Sodbrennen",
             intensity = 6,
             durationMinutes = 30,
-            notes = ""
+            notes = "",
+            symptomTypes = listOf("Sodbrennen", "Aufstoßen"),
+            activityIds = listOf(sitzen),
+            remedyIds = listOf(wasser)
         )
 
         val outFile = RefluxDataExport.exportToCacheFile(context, repository)
@@ -85,5 +91,8 @@ class RefluxDataExportTest {
         assertTrue("CSV must list the meal", csv.contains("Frühstück"))
         assertTrue("CSV must list Kaffee", csv.contains("Kaffee"))
         assertTrue("CSV must list the symptom", csv.contains("Sodbrennen"))
+        assertTrue("CSV must list all selected symptom types", csv.contains("Aufstoßen"))
+        assertTrue("CSV must list the activity", csv.contains("Sitzen"))
+        assertTrue("CSV must list the remedy", csv.contains("Wasser"))
     }
 }

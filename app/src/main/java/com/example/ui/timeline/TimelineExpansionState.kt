@@ -1,13 +1,8 @@
 package com.example.ui.timeline
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
-import androidx.compose.runtime.toMutableStateList
-import androidx.compose.runtime.snapshots.SnapshotStateMap
 
 /**
  * Tracks which timeline rows are currently expanded.
@@ -19,18 +14,22 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
  * Default state for every row is collapsed (the user only sees the summary
  * line and taps to reveal the details).
  *
- * Use [rememberTimelineExpansionState] in a Composable to get a remembered
- * instance; the pure-Kotlin [TimelineExpansionState] class is unit-testable
- * without any Compose machinery.
+ * The backing map is a Compose snapshot state map, so mutating it triggers
+ * recomposition of the timeline rows. Use [rememberTimelineExpansionState] in
+ * a Composable to get a remembered instance; the class itself is still
+ * unit-testable without any Compose UI machinery.
  */
 class TimelineExpansionState {
-    private val expanded: MutableSet<Long> = mutableSetOf()
+    private val expanded = mutableStateMapOf<Long, Unit>()
 
-    fun isExpanded(timestamp: Long): Boolean = timestamp in expanded
+    fun isExpanded(timestamp: Long): Boolean = expanded.containsKey(timestamp)
 
     fun toggle(timestamp: Long) {
-        if (timestamp in expanded) expanded.remove(timestamp)
-        else expanded.add(timestamp)
+        if (expanded.containsKey(timestamp)) {
+            expanded.remove(timestamp)
+        } else {
+            expanded[timestamp] = Unit
+        }
     }
 
     fun collapseAll() {

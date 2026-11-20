@@ -22,14 +22,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.example.ui.RefluxViewModel
 import com.example.ui.analysis.AnalysisScreen
 import com.example.ui.dashboard.DashboardScreen
 import com.example.ui.food.FoodsScreen
+import com.example.ui.habit.HabitsScreen
 import com.example.ui.meal.AddMealScreen
 import com.example.ui.settings.SettingsScreen
 import com.example.ui.symptom.AddSymptomScreen
@@ -40,9 +43,16 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector?
     object Timeline : Screen("timeline", "Timeline", Icons.Default.Today)
     object Foods : Screen("foods", "Lebensmittel", Icons.Default.Restaurant)
     object Analysis : Screen("analysis", "Trigger", Icons.Default.Analytics)
+    object Habits : Screen("habits", "Gewohnheiten")
 
     object AddMeal : Screen("add_meal", "Mahlzeit erfassen")
+    object EditMeal : Screen("edit_meal/{mealId}", "Mahlzeit bearbeiten") {
+        fun createRoute(mealId: Long): String = "edit_meal/$mealId"
+    }
     object AddSymptom : Screen("add_symptom", "Symptom erfassen")
+    object EditSymptom : Screen("edit_symptom/{symptomId}", "Symptom bearbeiten") {
+        fun createRoute(symptomId: Long): String = "edit_symptom/$symptomId"
+    }
     object Settings : Screen("settings", "Einstellungen")
 }
 
@@ -127,12 +137,28 @@ fun RefluxNavHost(
                 TimelineScreen(
                     viewModel = viewModel,
                     onNavigateToAddMeal = { navController.navigate(Screen.AddMeal.route) },
-                    onNavigateToAddSymptom = { navController.navigate(Screen.AddSymptom.route) }
+                    onNavigateToAddSymptom = { navController.navigate(Screen.AddSymptom.route) },
+                    onNavigateToEditMeal = { mealId ->
+                        navController.navigate(Screen.EditMeal.createRoute(mealId))
+                    },
+                    onNavigateToEditSymptom = { symptomId ->
+                        navController.navigate(Screen.EditSymptom.createRoute(symptomId))
+                    }
                 )
             }
 
             composable(Screen.Foods.route) {
-                FoodsScreen(viewModel = viewModel)
+                FoodsScreen(
+                    viewModel = viewModel,
+                    onNavigateToHabits = { navController.navigate(Screen.Habits.route) }
+                )
+            }
+
+            composable(Screen.Habits.route) {
+                HabitsScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
             }
 
             composable(Screen.Analysis.route) {
@@ -153,8 +179,37 @@ fun RefluxNavHost(
                 )
             }
 
+            composable(
+                route = Screen.EditMeal.route,
+                arguments = listOf(navArgument("mealId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val mealId = backStackEntry.arguments?.getLong("mealId")
+                if (mealId != null) {
+                    AddMealScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() },
+                        mealId = mealId
+                    )
+                }
+            }
+
+            composable(
+                route = Screen.EditSymptom.route,
+                arguments = listOf(navArgument("symptomId") { type = NavType.LongType })
+            ) { backStackEntry ->
+                val symptomId = backStackEntry.arguments?.getLong("symptomId")
+                if (symptomId != null) {
+                    AddSymptomScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() },
+                        symptomId = symptomId
+                    )
+                }
+            }
+
             composable(Screen.Settings.route) {
                 SettingsScreen(
+                    viewModel = viewModel,
                     onNavigateBack = { navController.popBackStack() },
                     onRequestCsvExport = {
                         // Hand off to a helper that wraps the file in a FileProvider URI
@@ -184,9 +239,13 @@ private fun triggerCsvShare(
                 putExtra(android.content.Intent.EXTRA_SUBJECT, "RefluxTracker Export")
                 addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(
-                android.content.Intent.createChooser(send, "CSV teilen")
-            )
+            // The grant flag must also be present on the chooser intent on
+            // some Android versions; otherwise the target app cannot read the
+            // FileProvider URI.
+            val chooser = android.content.Intent.createChooser(send, "CSV teilen").apply {
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(chooser)
         },
         onError = { t ->
             android.widget.Toast.makeText(

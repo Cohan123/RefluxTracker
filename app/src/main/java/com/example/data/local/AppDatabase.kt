@@ -1,14 +1,21 @@
 package com.example.data.local
 
 import android.content.Context
+import android.util.Log
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import com.example.data.model.ActivityEntity
 import com.example.data.model.FoodEntity
+import com.example.data.model.HabitOverrideEntity
 import com.example.data.model.MealEntity
 import com.example.data.model.MealFoodCrossRef
+import com.example.data.model.RemedyEntity
+import com.example.data.model.SymptomActivityCrossRef
 import com.example.data.model.SymptomEntity
+import com.example.data.model.SymptomRemedyCrossRef
 import com.example.data.security.DatabaseKeyProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,19 +30,30 @@ import java.util.concurrent.CopyOnWriteArrayList
         FoodEntity::class,
         MealEntity::class,
         MealFoodCrossRef::class,
-        SymptomEntity::class
+        SymptomEntity::class,
+        ActivityEntity::class,
+        RemedyEntity::class,
+        SymptomActivityCrossRef::class,
+        SymptomRemedyCrossRef::class,
+        HabitOverrideEntity::class
     ],
-    version = 1,
-    exportSchema = false
+    version = 3,
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun foodDao(): FoodDao
     abstract fun mealDao(): MealDao
     abstract fun symptomDao(): SymptomDao
+    abstract fun activityDao(): ActivityDao
+    abstract fun remedyDao(): RemedyDao
+    abstract fun habitOverrideDao(): HabitOverrideDao
 
     companion object {
+        private const val TAG = "AppDatabase"
         private const val DB_NAME = "refluxtrack_database"
         private const val KEY_PREFS_FILE = "dbkey.prefs"
+        private const val SQLCIPHER_FACTORY_CLASS =
+            "net.zetetic.database.sqlcipher.SupportOpenHelperFactory"
 
         @Volatile
         private var INSTANCE: AppDatabase? = null
@@ -77,9 +95,7 @@ abstract class AppDatabase : RoomDatabase() {
             absolutePath: String,
             rawKey: ByteArray
         ): AppDatabase {
-            val supportFactoryClass = try {
-                Class.forName("net.zetetic.database.sqlcipher.SupportOpenHelperFactory")
-            } catch (_: ClassNotFoundException) {
+            if (!isSqlcipherOnClasspath()) {
                 throw IllegalStateException("SQLCipher not on classpath")
             }
             try {
@@ -87,13 +103,39 @@ abstract class AppDatabase : RoomDatabase() {
             } catch (_: UnsatisfiedLinkError) {
                 throw IllegalStateException("SQLCipher native library not loadable")
             }
-            val factory = supportFactoryClass
-                .getDeclaredConstructor(ByteArray::class.java)
-                .newInstance(rawKey)
-            @Suppress("UNCHECKED_CAST")
             return Room.databaseBuilder(context, AppDatabase::class.java, absolutePath)
-                .openHelperFactory(factory as androidx.sqlite.db.SupportSQLiteOpenHelper.Factory)
+                .openHelperFactory(createSqlcipherFactory(rawKey))
                 .build()
+        }
+
+        private fun isSqlcipherOnClasspath(): Boolean = try {
+            Class.forName(SQLCIPHER_FACTORY_CLASS)
+            true
+        } catch (_: ClassNotFoundException) {
+            false
+        }
+
+        private fun isRobolectric(): Boolean = try {
+            Class.forName("org.robolectric.Robolectric")
+            true
+        } catch (_: ClassNotFoundException) {
+            false
+        }
+
+        /**
+         * Builds the SQLCipher [SupportSQLiteOpenHelper.Factory] around [passphrase].
+         *
+         * The factory keeps the supplied array **by reference** (it is not
+         * copied) and Room opens the database lazily on first access. The
+         * caller must therefore leave the array untouched until the database
+         * has been opened — clearing it here would make SQLCipher open the
+         * database with an all-zero key.
+         */
+        internal fun createSqlcipherFactory(passphrase: ByteArray): SupportSQLiteOpenHelper.Factory {
+            val factoryClass = Class.forName(SQLCIPHER_FACTORY_CLASS)
+            return factoryClass
+                .getDeclaredConstructor(ByteArray::class.java)
+                .newInstance(passphrase) as SupportSQLiteOpenHelper.Factory
         }
 
         private fun build(context: Context): AppDatabase {
@@ -102,7 +144,7 @@ abstract class AppDatabase : RoomDatabase() {
                 AppDatabase::class.java,
                 DB_NAME
             )
-                .fallbackToDestructiveMigration(false)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .addCallback(object : Callback() {
                     override fun onCreate(db: SupportSQLiteDatabase) {
                         super.onCreate(db)
@@ -122,44 +164,44 @@ abstract class AppDatabase : RoomDatabase() {
 
         /**
          * If the SQLCipher native library is on the classpath, load it and
-         * configure Room to use a SupportOpenHelperFactory with a key derived
-         * from the Android Keystore (or, on legacy devices / Robolectric, the
-         * obfuscated file-backed key — see [DatabaseKeyProvider]).
+         * configure Room to use a SupportOpenHelperFactory with the key from
+         * [DatabaseKeyProvider].
          *
          * If SQLCipher is absent (e.g. build was assembled with
          * -PenableSqlcipher=false), this is a no-op and Room uses plain SQLite.
          */
         private fun attachSqlcipherIfAvailable(context: Context, builder: RoomDatabase.Builder<AppDatabase>) {
-            val supportFactoryClass = try {
-                Class.forName("net.zetetic.database.sqlcipher.SupportOpenHelperFactory")
-            } catch (_: ClassNotFoundException) {
-                return
-            }
+            if (!isSqlcipherOnClasspath()) return
             // Load the native SQLCipher core library bundled in the AAR.
             try {
                 System.loadLibrary("sqlcipher")
-            } catch (_: UnsatisfiedLinkError) {
-                // Library not present (Robolectric test runs in-process). Skip.
-                return
+            } catch (error: UnsatisfiedLinkError) {
+                // Robolectric runs on the JVM and cannot load the Android .so.
+                // That is the only case where plain SQLite is acceptable: on a
+                // real device a missing SQLCipher would silently create an
+                // unencrypted health database.
+                if (isRobolectric()) {
+                    Log.w(
+                        TAG,
+                        "SQLCipher native library not loadable under Robolectric - " +
+                            "using plain SQLite for tests"
+                    )
+                    return
+                }
+                throw IllegalStateException(
+                    "SQLCipher is bundled but libsqlcipher.so could not be loaded. " +
+                        "Refusing to open the database unencrypted.",
+                    error
+                )
             }
 
             val prefsFile = File(context.filesDir, KEY_PREFS_FILE)
-            val passphrase: ByteArray = DatabaseKeyProvider.getOrCreateDatabaseKey(prefsFile)
-            try {
-                val factory = supportFactoryClass
-                    .getDeclaredConstructor(ByteArray::class.java)
-                    .newInstance(passphrase)
-                @Suppress("UNCHECKED_CAST")
-                builder.openHelperFactory(factory as androidx.sqlite.db.SupportSQLiteOpenHelper.Factory)
-                // The passphrase byte[] is consumed by SQLCipher's factory; zero it
-                // out so it doesn't linger in heap.
-                passphrase.fill(0)
-            } catch (_: Throwable) {
-                // If construction fails for any reason, fall back to plain SQLite
-                // rather than crash the app. The DB will be created without
-                // encryption — caller's threat model is degraded for this run.
-                passphrase.fill(0)
-            }
+            // Do NOT keep a local reference and clear it: the factory stores the
+            // array by reference and Room opens the database only on first use.
+            // Clearing it here would silently open the DB with an all-zero key.
+            builder.openHelperFactory(
+                createSqlcipherFactory(DatabaseKeyProvider.getOrCreateDatabaseKey(prefsFile))
+            )
         }
     }
 }

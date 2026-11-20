@@ -23,9 +23,8 @@ import org.robolectric.annotation.Config
  *  - Disabling clears the stored time but leaves the prefs key in place
  *  - Two settings objects pointing at the same Context see the same state
  *
- * The actual AlarmManager scheduling (see [ReminderScheduler]) is exercised
- * separately and not unit-tested here because AlarmManager is global process
- * state — Robolectric supports it but the tests would be brittle.
+ * The actual AlarmManager scheduling (see [ReminderScheduler]) is covered
+ * separately by [ReminderBootReceiverTest].
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])

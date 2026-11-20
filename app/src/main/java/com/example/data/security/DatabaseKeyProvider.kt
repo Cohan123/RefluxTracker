@@ -11,7 +11,9 @@ import java.security.SecureRandom
  * Threat model:
  *  - Device is lost / stolen, attacker has physical or root access.
  *  - Goal: the on-disk SQLite file must be unreadable without the key.
- *  - The key itself is NEVER stored in cleartext on disk.
+ *  - The key is not stored in cleartext, but it is only obfuscated: the XOR
+ *    pad is stored right next to the wrapped key. This is NOT equivalent to
+ *    Keystore-backed wrapping (see the note below).
  *
  * Key flow:
  *  1. On first call, generate a random 32-byte DB key with [SecureRandom].

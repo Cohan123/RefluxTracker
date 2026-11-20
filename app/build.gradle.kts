@@ -102,6 +102,13 @@ android {
   }
 }
 
+ksp {
+  // Export the Room schema of every version so migrations can be reviewed and
+  // tested (MigrationTestHelper). Commit the generated JSON together with the
+  // migration that produced it.
+  arg("room.schemaLocation", "${projectDir}/schemas")
+}
+
 dependencies {
   // AndroidX core
   implementation(libs.androidx.core.ktx)

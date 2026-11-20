@@ -49,7 +49,8 @@ object ReminderScheduler {
         val triggerAt = nextTriggerMillis(hourOfDay, minute)
         val pi = pendingIntent(context)
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        // Inexact daily alarm; survives reboot-loss but may drift a few minutes.
+        // Inexact daily alarm; may drift a few minutes. The boot/update receiver
+        // re-creates it after the process loses its alarms.
         am.setRepeating(
             AlarmManager.RTC_WAKEUP,
             triggerAt,

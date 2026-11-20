@@ -1,10 +1,14 @@
 package com.example.ui.food
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -32,6 +37,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -48,11 +54,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.FoodCategories
+import com.example.data.model.FoodEntity
 import com.example.ui.RefluxViewModel
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun FoodsScreen(
     viewModel: RefluxViewModel,
+    onNavigateToHabits: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val allFoods by viewModel.allFoods.collectAsStateWithLifecycle()
@@ -61,6 +71,9 @@ fun FoodsScreen(
     var selectedCategory by remember { mutableStateOf("Alle") }
     var showAddDialog by remember { mutableStateOf(false) }
     var newFoodName by remember { mutableStateOf("") }
+    var newFoodCategories by remember { mutableStateOf(setOf<String>()) }
+    var editingFood by remember { mutableStateOf<FoodEntity?>(null) }
+    var editingCategories by remember { mutableStateOf(setOf<String>()) }
 
     val categories = remember(allFoods) {
         listOf("Alle") + allFoods.map { it.category }.distinct().sorted()
@@ -72,6 +85,11 @@ fun FoodsScreen(
             val matchesSearch = searchQuery.isBlank() || food.name.contains(searchQuery.trim(), ignoreCase = true)
             matchesCategory && matchesSearch
         }
+    }
+
+    fun openEditor(food: FoodEntity) {
+        editingFood = food
+        editingCategories = FoodCategories.decode(food.categories).toSet()
     }
 
     Scaffold(
@@ -107,10 +125,27 @@ fun FoodsScreen(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Neutrale Datenbank aller erfassbaren Lebensmittel. Erst deine persönlichen Aufzeichnungen identifizieren mögliche Trigger.",
+                    text = "Neutrale Datenbank aller erfassbaren Lebensmittel. Kategorien sind " +
+                        "manuell gepflegte Analysemerkmale, keine automatischen Trigger.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = onNavigateToHabits,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("open_habits_button"),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Erkannte Gewohnheiten verwalten")
+                }
                 Spacer(modifier = Modifier.height(12.dp))
 
                 // Search field
@@ -135,7 +170,7 @@ fun FoodsScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Category Filter Chips
+                // Food-type filter chips (catalogue groups, not analysis categories)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -161,13 +196,19 @@ fun FoodsScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(displayedFoods, key = { it.id }) { food ->
+                    val analysisCategories = FoodCategories.labels(
+                        FoodCategories.decode(food.categories)
+                    )
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { openEditor(food) }
+                            .testTag("food_row_${food.id}"),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
                     ) {
                         Row(
                             modifier = Modifier
@@ -207,6 +248,13 @@ fun FoodsScreen(
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
+                                    if (analysisCategories.isNotEmpty()) {
+                                        Text(
+                                            text = analysisCategories.joinToString(" · "),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                             }
 
@@ -231,44 +279,120 @@ fun FoodsScreen(
     }
 
     if (showAddDialog) {
-        AlertDialog(
-            onDismissRequest = { showAddDialog = false },
-            title = { Text("Neues Lebensmittel") },
-            text = {
-                Column {
+        CategoryDialog(
+            title = "Neues Lebensmittel",
+            confirmLabel = "Speichern",
+            name = newFoodName,
+            onNameChange = { newFoodName = it },
+            selected = newFoodCategories,
+            onSelectedChange = { newFoodCategories = it },
+            confirmEnabled = newFoodName.isNotBlank(),
+            onDismiss = {
+                showAddDialog = false
+                newFoodName = ""
+                newFoodCategories = emptySet()
+            },
+            onConfirm = {
+                viewModel.addCustomFood(
+                    name = newFoodName.trim(),
+                    categories = FoodCategories.normalize(newFoodCategories)
+                )
+                showAddDialog = false
+                newFoodName = ""
+                newFoodCategories = emptySet()
+            }
+        )
+    }
+
+    editingFood?.let { food ->
+        CategoryDialog(
+            title = food.name,
+            confirmLabel = "Kategorien speichern",
+            name = null,
+            onNameChange = {},
+            selected = editingCategories,
+            onSelectedChange = { editingCategories = it },
+            confirmEnabled = true,
+            onDismiss = { editingFood = null },
+            onConfirm = {
+                viewModel.updateFoodCategories(food.id, editingCategories.toList())
+                editingFood = null
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CategoryDialog(
+    title: String,
+    confirmLabel: String,
+    name: String?,
+    onNameChange: (String) -> Unit,
+    selected: Set<String>,
+    onSelectedChange: (Set<String>) -> Unit,
+    confirmEnabled: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                if (name != null) {
                     Text(
-                        text = "Gib den Namen des Lebensmittels ein:",
-                        style = MaterialTheme.typography.bodyMedium
+                        text = "Name des Lebensmittels:",
+                        style = MaterialTheme.typography.bodySmall
                     )
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
-                        value = newFoodName,
-                        onValueChange = { newFoodName = it },
+                        value = name,
+                        onValueChange = onNameChange,
                         label = { Text("Name") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Spacer(modifier = Modifier.height(14.dp))
+                } else {
+                    Text(
+                        text = "Kategorien für die Auswertung (Mehrfachauswahl):",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newFoodName.isNotBlank()) {
-                            viewModel.addCustomFood(newFoodName.trim())
-                            newFoodName = ""
-                            showAddDialog = false
-                        }
-                    },
-                    enabled = newFoodName.isNotBlank()
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text("Speichern")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) {
-                    Text("Abbrechen")
+                    FoodCategories.ALL.forEach { category ->
+                        FilterChip(
+                            selected = category.key in selected,
+                            onClick = {
+                                onSelectedChange(
+                                    if (category.key in selected) {
+                                        selected - category.key
+                                    } else {
+                                        selected + category.key
+                                    }
+                                )
+                            },
+                            label = { Text(category.label) },
+                            modifier = Modifier.testTag("food_category_${category.key}")
+                        )
+                    }
                 }
             }
-        )
-    }
+        },
+        confirmButton = {
+            Button(onClick = onConfirm, enabled = confirmEnabled) {
+                Text(confirmLabel)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Abbrechen")
+            }
+        }
+    )
 }

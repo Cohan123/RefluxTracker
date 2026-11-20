@@ -3,6 +3,7 @@ package com.example.analysis
 import com.example.data.model.MealWithFoods
 import com.example.data.model.SymptomEntity
 import com.example.data.model.SymptomTypes
+import com.example.data.model.SymptomTypesJson
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -117,6 +118,26 @@ object TriggerAnalysisEngine {
             0.0
         }
 
+        // Group symptoms by every selected type once, not once per food. The
+        // same grouping provides the type-specific baseline used below.
+        val symptomsByType: Map<String, List<SymptomEntity>> =
+            if (config.useSymptomCategoryWindows) {
+                symptoms
+                    .flatMap { symptom ->
+                        SymptomTypesJson
+                            .decodeOrPrimary(symptom.symptomTypesJson, symptom.symptomType)
+                            .distinct()
+                            .map { type -> type to symptom }
+                    }
+                    .groupBy({ it.first }, { it.second })
+            } else {
+                emptyMap()
+            }
+
+        val baselineByType: Map<String, Double> = symptomsByType.mapValues { (_, list) ->
+            list.map { it.intensity }.average()
+        }
+
         val foodMealsMap = mutableMapOf<Long, Pair<String, MutableList<MealWithFoods>>>()
         for (mealWithFoods in meals) {
             for (food in mealWithFoods.foods) {
@@ -135,8 +156,8 @@ object TriggerAnalysisEngine {
             if (consumptionCount == 0) continue
 
             if (config.useSymptomCategoryWindows) {
-                // Group symptoms by type, then analyse each (food, symptomType) pair.
-                val symptomsByType = symptoms.groupBy { it.symptomType }
+                // Group symptoms by every selected type so that secondary
+                // selections (multi-select) participate in the analysis too.
                 for ((symptomType, symptomsOfType) in symptomsByType) {
                     val category = SymptomCategory.forSymptomType(symptomType)
                     val window = category.window()
@@ -148,7 +169,7 @@ object TriggerAnalysisEngine {
                         mealList = mealList,
                         symptomsOfType = symptomsOfType,
                         window = window,
-                        baselineIntensity = baselineIntensity
+                        baselineIntensity = baselineByType[symptomType] ?: baselineIntensity
                     )
                     results.add(row)
                 }
@@ -172,10 +193,16 @@ object TriggerAnalysisEngine {
             }
         }
 
-        return results.sortedWith(
-            compareByDescending<FoodTriggerAnalysis> { it.score }
-                .thenByDescending { it.consumptionCount }
-        )
+        return results
+            // A (food, symptom type) pair without a single symptom in its
+            // window is not evidence of anything. With per-type analysis this
+            // would otherwise produce a large, misleading cross-product of
+            // zero-event rows (one for every food × every logged symptom type).
+            .filter { it.symptomEventsCount > 0 }
+            .sortedWith(
+                compareByDescending<FoodTriggerAnalysis> { it.score }
+                    .thenByDescending { it.consumptionCount }
+            )
     }
 
     private fun analysePair(

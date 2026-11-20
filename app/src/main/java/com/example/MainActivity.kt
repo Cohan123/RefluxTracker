@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.reminder.ReminderScheduler
+import com.example.reminder.ReminderSettings
 import com.example.ui.RefluxViewModel
 import com.example.ui.navigation.RefluxNavHost
 import com.example.ui.theme.MyApplicationTheme
@@ -16,6 +18,7 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
+    restoreReminderIfEnabled()
     setContent {
       MyApplicationTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -27,5 +30,16 @@ class MainActivity : ComponentActivity() {
         }
       }
     }
+  }
+
+  /**
+   * Safety net for cases where BOOT_COMPLETED was not delivered (for example
+   * when the app was force-stopped before the reboot).
+   */
+  private fun restoreReminderIfEnabled() {
+    val settings = ReminderSettings(this)
+    if (!settings.isEnabled()) return
+    val time = settings.getReminderTime() ?: return
+    ReminderScheduler.schedule(this, time.hourOfDay, time.minute)
   }
 }

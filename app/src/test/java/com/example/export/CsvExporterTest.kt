@@ -29,7 +29,12 @@ class CsvExporterTest {
         assertTrue("must contain MAHLZEITEN section", csv.contains("# MAHLZEITEN"))
         assertTrue("must contain SYMPTOME section", csv.contains("# SYMPTOME"))
         assertTrue("must contain meal header", csv.contains("Datum,Zeit,Mahlzeitentyp,Portion,Lebensmittel,Notiz"))
-        assertTrue("must contain symptom header", csv.contains("Datum,Zeit,Symptom,Intensitaet,DauerMin,Notiz"))
+        assertTrue(
+            "must contain symptom header",
+            csv.contains(
+                "Datum,Zeit,Symptom,Symptomarten,Intensitaet,DauerMin,Taetigkeiten,Massnahmen,Notiz"
+            )
+        )
     }
 
     @Test
@@ -98,11 +103,36 @@ class CsvExporterTest {
         assertTrue("sodbrennen row must contain intensity 7", sod.contains(",7,"))
         assertTrue("sodbrennen row must contain duration 45", sod.contains(",45,"))
         // For Husten, durationMinutes is null → empty field between two commas.
-        // Expected: ",3,,trocken" (intensity=3, then empty duration, then notes)
+        // Expected: ",3,,,,trocken" (intensity=3, then empty duration,
+        // empty activities, empty remedies, then notes)
         assertTrue(
             "husten row must have empty duration field, got: $hu",
-            hu.contains(",3,,trocken")
+            hu.contains(",3,,,,trocken")
         )
+    }
+
+    @Test
+    fun `symptom row lists all selected types and catalog details`() {
+        val symptoms = listOf(
+            CsvExporter.SymptomRow(
+                timestampMillis = 1700000000000L,
+                symptomType = "Sodbrennen",
+                symptomTypes = listOf("Sodbrennen", "Aufstoßen"),
+                intensity = 5,
+                durationMinutes = 15,
+                notes = "",
+                activities = listOf("Sitzen", "Liegen"),
+                remedies = listOf("Wasser")
+            )
+        )
+        val csv = CsvExporter.buildCsv(meals = emptyList(), symptoms = symptoms)
+        val row = csv.lines().first { it.contains("Sodbrennen") }
+        assertTrue(
+            "row must contain all symptom types, got: $row",
+            row.contains("Sodbrennen; Aufstoßen")
+        )
+        assertTrue("row must contain activities, got: $row", row.contains("Sitzen; Liegen"))
+        assertTrue("row must contain remedies, got: $row", row.contains("Wasser"))
     }
 
     @Test

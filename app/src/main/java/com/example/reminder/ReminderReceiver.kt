@@ -29,7 +29,7 @@ class ReminderReceiver : BroadcastReceiver() {
         )
 
         val n = NotificationCompat.Builder(context, ReminderScheduler.CHANNEL_ID)
-            .setSmallIcon(com.dp.refluxtracker.R.mipmap.ic_launcher)
+            .setSmallIcon(com.dp.refluxtracker.R.drawable.ic_notification)
             .setContentTitle(context.getString(com.dp.refluxtracker.R.string.reminder_title))
             .setContentText(context.getString(com.dp.refluxtracker.R.string.reminder_text))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)

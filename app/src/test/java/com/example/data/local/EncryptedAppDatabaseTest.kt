@@ -7,8 +7,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.FixMethodOrder
 import org.junit.Test
@@ -82,6 +84,13 @@ class EncryptedAppDatabaseTest {
 
     @Test
     fun `app database reports sqlcipher encryption is active when library is loaded`() {
+        // Robolectric cannot load Android .so files. Without this assumption the
+        // test would "pass" for the wrong reason: openWithRawKeyForTest() throws
+        // simply because the native library is missing, regardless of the key.
+        assumeTrue(
+            "SQLCipher native library cannot be loaded on the JVM; run this check on a device/emulator",
+            isSqlcipherNativeLoadable()
+        )
         // If the SQLCipher native library loads successfully in this test process,
         // AppDatabase.attachSqlcipher must have attached a non-null openHelperFactory
         // (verified indirectly: the DB file on disk is NOT a valid SQLite header
@@ -110,5 +119,44 @@ class EncryptedAppDatabaseTest {
             "Opening the DB with the wrong key must fail — proves SQLCipher is active",
             false, opened
         )
+    }
+
+    /**
+     * Regression guard for the key lifecycle: `SupportOpenHelperFactory` stores
+     * the passphrase array by reference and Room opens the DB lazily. Clearing
+     * the array right after creating the factory therefore opens the database
+     * with an all-zero key (encryption becomes a no-op).
+     */
+    @Test
+    fun `sqlcipher factory keeps the passphrase by reference`() {
+        assumeTrue(
+            "SQLCipher is not on the classpath (built with -PenableSqlcipher=false)",
+            runCatching {
+                Class.forName("net.zetetic.database.sqlcipher.SupportOpenHelperFactory")
+            }.isSuccess
+        )
+        val key = ByteArray(32) { (it * 31 + 7).toByte() }
+        val expected = key.copyOf()
+
+        val factory = AppDatabase.createSqlcipherFactory(key)
+
+        val passwordField = factory.javaClass
+            .getDeclaredField("password")
+            .apply { isAccessible = true }
+        val stored = passwordField.get(factory) as ByteArray
+
+        assertArrayEquals(
+            "The factory must still hold the real key, not a zeroed array",
+            expected,
+            stored
+        )
+        assertArrayEquals("The caller's key array must not be modified", expected, key)
+    }
+
+    private fun isSqlcipherNativeLoadable(): Boolean = try {
+        System.loadLibrary("sqlcipher")
+        true
+    } catch (_: UnsatisfiedLinkError) {
+        false
     }
 }

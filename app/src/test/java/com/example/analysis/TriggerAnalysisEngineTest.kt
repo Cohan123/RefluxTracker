@@ -89,4 +89,34 @@ class TriggerAnalysisEngineTest {
             assertEquals(CorrelationAssessment.INSUFFICIENT_DATA, it.assessment)
         }
     }
+
+    @Test
+    fun `secondary symptom types participate in the analysis`() {
+        val coffee = FoodEntity(id = 1L, name = "Kaffee", category = "Getränke")
+        val mealTime = 1700000000000L
+        val meals = listOf(
+            MealWithFoods(
+                meal = MealEntity(id = 1L, timestamp = mealTime, mealType = "Frühstück"),
+                foods = listOf(coffee)
+            )
+        )
+        val symptoms = listOf(
+            SymptomEntity(
+                id = 1L,
+                timestamp = mealTime + (30 * 60 * 1000L),
+                symptomType = SymptomTypes.SODBRENNEN,
+                intensity = 6,
+                symptomTypesJson = """["Sodbrennen","Aufstoßen"]"""
+            )
+        )
+
+        val results = TriggerAnalysisEngine.analyze(meals, symptoms)
+        val heartburn = results.find { it.symptomType == SymptomTypes.SODBRENNEN }
+        val burping = results.find { it.symptomType == SymptomTypes.AUFSTOSSEN }
+
+        assertTrue("primary type must be analysed", heartburn != null)
+        assertTrue("secondary type must be analysed too", burping != null)
+        assertEquals(1, heartburn!!.symptomEventsCount)
+        assertEquals(1, burping!!.symptomEventsCount)
+    }
 }

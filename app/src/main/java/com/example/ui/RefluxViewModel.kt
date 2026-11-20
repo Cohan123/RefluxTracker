@@ -1,28 +1,46 @@
 package com.example.ui
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.analysis.AnalyticsSummary
+import com.example.analysis.AnalyticsWindow
+import com.example.analysis.DetectedHabit
 import com.example.analysis.FoodTriggerAnalysis
+import com.example.analysis.HabitDetector
+import com.example.analysis.RefluxAnalyticsService
 import com.example.analysis.TriggerAnalysisEngine
 import com.example.data.local.AppDatabase
+import com.example.data.model.ActivityEntity
 import com.example.data.model.FoodEntity
 import com.example.data.model.MealWithFoods
+import com.example.data.model.RemedyEntity
 import com.example.data.model.SymptomEntity
+import com.example.data.model.SymptomWithDetails
 import com.example.data.repository.RefluxRepository
 import com.example.data.repository.TimelineEntry
+import com.example.importer.CsvImportSummary
+import com.example.importer.RefluxDataImport
+import com.example.report.DoctorReportBuilder
+import com.example.report.DoctorReportPdf
+import com.example.report.ReportSettings
 import com.example.util.DateTimeUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class DashboardUiState(
     val todayMealsCount: Int = 0,
@@ -42,10 +60,17 @@ class RefluxViewModel(
     init {
         viewModelScope.launch {
             repository.ensureDefaultFoods()
+            repository.ensureDefaultCatalogs()
         }
     }
 
     val allFoods: StateFlow<List<FoodEntity>> = repository.allFoods
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allActivities: StateFlow<List<ActivityEntity>> = repository.allActivities
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allRemedies: StateFlow<List<RemedyEntity>> = repository.allRemedies
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allMeals: StateFlow<List<MealWithFoods>> = repository.allMealsWithFoods
@@ -53,6 +78,59 @@ class RefluxViewModel(
 
     val allSymptoms: StateFlow<List<SymptomEntity>> = repository.allSymptoms
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allSymptomsWithDetails: StateFlow<List<SymptomWithDetails>> =
+        repository.allSymptomsWithDetails
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Locally detected recurring meals; recomputed from the meal history. */
+    val habitOverrides = repository.allHabitOverrides
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val habits: StateFlow<List<DetectedHabit>> = combine(
+        allMeals,
+        habitOverrides
+    ) { meals, overrides ->
+        HabitDetector.detect(meals, overrides)
+    }.flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _selectedAnalyticsWindow = MutableStateFlow(AnalyticsWindow.SEVEN_DAYS)
+    val selectedAnalyticsWindow: StateFlow<AnalyticsWindow> = _selectedAnalyticsWindow.asStateFlow()
+
+    fun selectAnalyticsWindow(window: AnalyticsWindow) {
+        _selectedAnalyticsWindow.value = window
+    }
+
+    private val reportSettings = ReportSettings(application)
+
+    private val _doctorReportUserName = MutableStateFlow(reportSettings.userName().orEmpty())
+
+    /** Optional display name for the PDF header; persisted locally. */
+    val doctorReportUserName: StateFlow<String> = _doctorReportUserName.asStateFlow()
+
+    fun setDoctorReportUserName(name: String) {
+        _doctorReportUserName.value = name.trim()
+        reportSettings.setUserName(name)
+    }
+
+    /**
+     * Fixed-window analytics (30 min–4 h after a meal, portion-weighted).
+     * Computed off the main thread and refreshed when meals, symptoms or the
+     * selected reporting window change.
+     */
+    val analyticsSummary: StateFlow<AnalyticsSummary?> = combine(
+        allMeals,
+        allSymptomsWithDetails,
+        _selectedAnalyticsWindow
+    ) { meals, symptoms, window ->
+        RefluxAnalyticsService.getAnalyticsSummary(
+            meals = meals,
+            symptoms = symptoms,
+            timeWindowDays = window.days
+        )
+    }.flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     // Selected day offset: 0 for today, -1 for yesterday, etc.
     private val _selectedDayOffset = MutableStateFlow(0)
@@ -134,7 +212,42 @@ class RefluxViewModel(
     ) {
         viewModelScope.launch {
             repository.addMeal(timestamp, mealType, portion, notes, foodIds)
+            // A retroactive entry must be visible immediately: the day view
+            // follows the saved meal's local date. Existing entries are not
+            // touched - only the selected day changes.
+            _selectedDayOffset.value = DateTimeUtils.localDayOffset(timestamp)
             onSuccess()
+        }
+    }
+
+    fun updateMeal(
+        mealId: Long,
+        timestamp: Long,
+        mealType: String,
+        portion: String,
+        notes: String,
+        foodIds: List<Long>,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            val updated = repository.updateMeal(
+                mealId = mealId,
+                timestamp = timestamp,
+                mealType = mealType,
+                portion = portion,
+                notes = notes,
+                foodIds = foodIds
+            )
+            if (updated) {
+                _selectedDayOffset.value = DateTimeUtils.localDayOffset(timestamp)
+                onSuccess()
+            }
+        }
+    }
+
+    fun getMealDetails(mealId: Long, onLoaded: (MealWithFoods?) -> Unit) {
+        viewModelScope.launch {
+            onLoaded(repository.getMealDetails(mealId))
         }
     }
 
@@ -150,11 +263,69 @@ class RefluxViewModel(
         intensity: Int,
         durationMinutes: Int?,
         notes: String,
+        symptomTypes: List<String> = emptyList(),
+        activityIds: List<Long> = emptyList(),
+        remedyIds: List<Long> = emptyList(),
         onSuccess: () -> Unit = {}
     ) {
         viewModelScope.launch {
-            repository.addSymptom(timestamp, symptomType, intensity, durationMinutes, notes)
+            repository.addSymptom(
+                timestamp = timestamp,
+                symptomType = symptomType,
+                intensity = intensity,
+                durationMinutes = durationMinutes,
+                notes = notes,
+                symptomTypes = symptomTypes,
+                activityIds = activityIds,
+                remedyIds = remedyIds
+            )
             onSuccess()
+        }
+    }
+
+    fun addCustomActivity(name: String, onAdded: (Long) -> Unit = {}) {
+        viewModelScope.launch {
+            onAdded(repository.insertCustomActivity(name))
+        }
+    }
+
+    fun addCustomRemedy(name: String, onAdded: (Long) -> Unit = {}) {
+        viewModelScope.launch {
+            onAdded(repository.insertCustomRemedy(name))
+        }
+    }
+
+    fun updateSymptom(
+        symptomId: Long,
+        timestamp: Long,
+        symptomType: String,
+        intensity: Int,
+        durationMinutes: Int?,
+        notes: String,
+        symptomTypes: List<String> = emptyList(),
+        activityIds: List<Long> = emptyList(),
+        remedyIds: List<Long> = emptyList(),
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            repository.updateSymptom(
+                symptomId = symptomId,
+                timestamp = timestamp,
+                symptomType = symptomType,
+                intensity = intensity,
+                durationMinutes = durationMinutes,
+                notes = notes,
+                symptomTypes = symptomTypes,
+                activityIds = activityIds,
+                remedyIds = remedyIds
+            )
+            onSuccess()
+        }
+    }
+
+    fun getSymptomDetails(symptomId: Long, onLoaded: (SymptomWithDetails?) -> Unit) {
+        viewModelScope.launch {
+            onLoaded(repository.getSymptomDetails(symptomId))
         }
     }
 
@@ -164,11 +335,42 @@ class RefluxViewModel(
         }
     }
 
-    fun addCustomFood(name: String, category: String = "Eigene Lebensmittel", onAdded: (Long) -> Unit = {}) {
+    fun addCustomFood(
+        name: String,
+        category: String = "Eigene Lebensmittel",
+        categories: List<String> = emptyList(),
+        onAdded: (Long) -> Unit = {}
+    ) {
         viewModelScope.launch {
-            val id = repository.insertCustomFood(name, category)
+            val id = repository.insertCustomFood(name, category, categories)
             onAdded(id)
         }
+    }
+
+    fun updateFoodCategories(foodId: Long, categories: List<String>) {
+        viewModelScope.launch {
+            repository.updateFoodCategories(foodId, categories)
+        }
+    }
+
+    fun saveHabitOverride(
+        signature: String,
+        customName: String?,
+        customFoods: List<String>?,
+        isDeleted: Boolean = false
+    ) {
+        viewModelScope.launch {
+            repository.saveHabitOverride(signature, customName, customFoods, isDeleted)
+        }
+    }
+
+    fun deleteHabit(signature: String) {
+        saveHabitOverride(
+            signature = signature,
+            customName = null,
+            customFoods = null,
+            isDeleted = true
+        )
     }
 
     /**
@@ -192,6 +394,104 @@ class RefluxViewModel(
             } catch (t: Throwable) {
                 onError(t)
             }
+        }
+    }
+
+    /**
+     * Reads and imports the CSV/HTML backup selected by the user. The actual
+     * write happens atomically in [RefluxRepository.importEntries]; the result
+     * contains the number of imported/skipped entries for the UI summary.
+     */
+    fun importCsv(
+        context: android.content.Context,
+        uri: Uri,
+        onComplete: (CsvImportSummary) -> Unit,
+        onError: (Throwable) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                val summary = withContext(Dispatchers.IO) {
+                    RefluxDataImport.importFromUri(
+                        context = context.applicationContext,
+                        repository = repository,
+                        uri = uri
+                    )
+                }
+                onComplete(summary)
+            } catch (t: Throwable) {
+                onError(t)
+            }
+        }
+    }
+
+    /**
+     * Generates the doctor report PDF for the currently selected analytics
+     * window. All values come from the documented entries; missing data is
+     * rendered as such. The file is written to `cacheDir/exports/`; the caller
+     * is responsible for saving or sharing it via a FileProvider URI.
+     */
+    fun createDoctorReport(
+        context: android.content.Context,
+        onReady: (java.io.File) -> Unit,
+        onError: (Throwable) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                onReady(buildDoctorReportPdf(context))
+            } catch (t: Throwable) {
+                onError(t)
+            }
+        }
+    }
+
+    /**
+     * Generates the report and writes it directly to the document URI chosen by
+     * the user (for example via `ActivityResultContracts.CreateDocument`).
+     */
+    fun saveDoctorReportTo(
+        context: android.content.Context,
+        uri: Uri,
+        onComplete: () -> Unit,
+        onError: (Throwable) -> Unit = {}
+    ) {
+        viewModelScope.launch {
+            try {
+                val file = buildDoctorReportPdf(context)
+                withContext(Dispatchers.IO) {
+                    val output = context.contentResolver.openOutputStream(uri)
+                        ?: error("Ziel-Datei konnte nicht geöffnet werden")
+                    output.use { out ->
+                        file.inputStream().use { input -> input.copyTo(out) }
+                    }
+                }
+                onComplete()
+            } catch (t: Throwable) {
+                onError(t)
+            }
+        }
+    }
+
+    private suspend fun buildDoctorReportPdf(context: android.content.Context): java.io.File {
+        val meals = repository.allMealsWithFoods.first()
+        val symptoms = repository.allSymptomsWithDetails.first()
+        val window = _selectedAnalyticsWindow.value
+        val summary = withContext(Dispatchers.Default) {
+            RefluxAnalyticsService.getAnalyticsSummary(
+                meals = meals,
+                symptoms = symptoms,
+                timeWindowDays = window.days
+            )
+        }
+        val report = withContext(Dispatchers.Default) {
+            DoctorReportBuilder.build(
+                meals = meals,
+                symptoms = symptoms,
+                summary = summary,
+                userName = _doctorReportUserName.value.takeIf { it.isNotBlank() }
+            )
+        }
+        return withContext(Dispatchers.IO) {
+            DoctorReportPdf.write(context.applicationContext, report)
         }
     }
 

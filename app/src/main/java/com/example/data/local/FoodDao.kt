@@ -13,6 +13,9 @@ interface FoodDao {
     @Query("SELECT * FROM foods ORDER BY name ASC")
     fun getAllFoods(): Flow<List<FoodEntity>>
 
+    @Query("SELECT * FROM foods ORDER BY name ASC")
+    suspend fun getFoods(): List<FoodEntity>
+
     @Query("SELECT * FROM foods WHERE name LIKE '%' || :query || '%' ORDER BY name ASC")
     fun searchFoods(query: String): Flow<List<FoodEntity>>
 
@@ -30,6 +33,9 @@ interface FoodDao {
 
     @Update
     suspend fun updateFood(food: FoodEntity)
+
+    @Query("UPDATE foods SET categories = :categories WHERE id = :id")
+    suspend fun updateCategories(id: Long, categories: String)
 
     @Query("DELETE FROM foods WHERE id = :id")
     suspend fun deleteFoodById(id: Long)

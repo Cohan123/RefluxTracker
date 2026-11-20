@@ -31,13 +31,17 @@ object CsvExporter {
     data class SymptomRow(
         val timestampMillis: Long,
         val symptomType: String,
+        val symptomTypes: List<String> = listOf(symptomType),
         val intensity: Int,
         val durationMinutes: Int?,
-        val notes: String
+        val notes: String,
+        val activities: List<String> = emptyList(),
+        val remedies: List<String> = emptyList()
     )
 
     private val MEAL_HEADER = "Datum,Zeit,Mahlzeitentyp,Portion,Lebensmittel,Notiz"
-    private val SYMPTOM_HEADER = "Datum,Zeit,Symptom,Intensitaet,DauerMin,Notiz"
+    private val SYMPTOM_HEADER =
+        "Datum,Zeit,Symptom,Symptomarten,Intensitaet,DauerMin,Taetigkeiten,Massnahmen,Notiz"
 
     fun buildCsv(
         meals: List<MealRow>,
@@ -64,11 +68,15 @@ object CsvExporter {
         sb.append(SYMPTOM_HEADER).append('\n')
         for (s in symptoms) {
             val d = Date(s.timestampMillis)
+            val types = s.symptomTypes.ifEmpty { listOf(s.symptomType) }
             sb.append(dateFmt.format(d)).append(',')
             sb.append(timeFmt.format(d)).append(',')
             sb.append(quote(s.symptomType)).append(',')
+            sb.append(quote(types.joinToString("; "))).append(',')
             sb.append(s.intensity.toString()).append(',')
             sb.append(s.durationMinutes?.toString() ?: "").append(',')
+            sb.append(quote(s.activities.joinToString("; "))).append(',')
+            sb.append(quote(s.remedies.joinToString("; "))).append(',')
             sb.append(quote(s.notes)).append('\n')
         }
         return sb.toString()

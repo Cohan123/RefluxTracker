@@ -4,6 +4,7 @@ import com.example.data.model.MealWithFoods
 import com.example.data.model.SymptomEntity
 import com.example.data.model.SymptomTypes
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -122,6 +123,82 @@ class SymptomCategoryWindowTest {
         assertEquals(5, sodbrennen.symptomEventsCount)
         assertEquals(5, sleep!!.consumptionCount)
         assertEquals(3, sleep.symptomEventsCount)
+    }
+
+    @Test
+    fun `pairs without a symptom inside their window are omitted`() {
+        val coffee = com.example.data.model.FoodEntity(id = 1L, name = "Kaffee", category = "Getränke")
+        val mealTime = 1700000000000L
+        val hour = 3600 * 1000L
+        val meals = listOf(
+            MealWithFoods(
+                meal = com.example.data.model.MealEntity(
+                    id = 1L, timestamp = mealTime, mealType = "Frühstück"
+                ),
+                foods = listOf(coffee)
+            )
+        )
+        val symptoms = listOf(
+            // Before the meal: outside the IMMEDIATE window.
+            SymptomEntity(
+                id = 1L,
+                timestamp = mealTime - hour,
+                symptomType = SymptomTypes.SODBRENNEN,
+                intensity = 6
+            ),
+            // 2 h after: inside the DELAYED window for cough.
+            SymptomEntity(
+                id = 2L,
+                timestamp = mealTime + 2 * hour,
+                symptomType = SymptomTypes.HUSTEN,
+                intensity = 5
+            )
+        )
+
+        val results = TriggerAnalysisEngine.analyze(meals, symptoms)
+
+        assertEquals(1, results.size)
+        assertEquals(SymptomTypes.HUSTEN, results.single().symptomType)
+        assertEquals(1, results.single().symptomEventsCount)
+    }
+
+    @Test
+    fun `baseline intensity is specific to the analysed symptom type`() {
+        val coffee = com.example.data.model.FoodEntity(id = 1L, name = "Kaffee", category = "Getränke")
+        val mealTime = 1700000000000L
+        val halfHour = 30 * 60 * 1000L
+        val hour = 3600 * 1000L
+        val meals = listOf(
+            MealWithFoods(
+                meal = com.example.data.model.MealEntity(
+                    id = 1L, timestamp = mealTime, mealType = "Frühstück"
+                ),
+                foods = listOf(coffee)
+            )
+        )
+        val symptoms = listOf(
+            SymptomEntity(
+                id = 1L,
+                timestamp = mealTime + halfHour,
+                symptomType = SymptomTypes.SODBRENNEN,
+                intensity = 8
+            ),
+            SymptomEntity(
+                id = 2L,
+                timestamp = mealTime + 2 * hour,
+                symptomType = SymptomTypes.HUSTEN,
+                intensity = 3
+            )
+        )
+
+        val results = TriggerAnalysisEngine.analyze(meals, symptoms)
+
+        val heartburn = results.single { it.symptomType == SymptomTypes.SODBRENNEN }
+        val cough = results.single { it.symptomType == SymptomTypes.HUSTEN }
+        assertEquals(8.0, heartburn.baselineSymptomIntensity, 0.0001)
+        assertEquals(3.0, cough.baselineSymptomIntensity, 0.0001)
+        // The rows must not share the global average of (8 + 3) / 2 = 5.5.
+        assertNotEquals(5.5, cough.baselineSymptomIntensity, 0.0001)
     }
 
     @Test

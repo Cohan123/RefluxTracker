@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.analysis.CorrelationAssessment
+import com.example.data.model.SymptomTypesJson
 import com.example.data.repository.TimelineEntry
 import com.example.ui.RefluxViewModel
 import com.example.ui.components.DataQualityBadge
@@ -482,10 +483,15 @@ fun DashboardScreen(
                                             }
                                             is TimelineEntry.Symptom -> {
                                                 Text(
-                                                    text = entry.symptom.symptomType,
+                                                    text = SymptomTypesJson.decodeOrPrimary(
+                                                        entry.symptom.symptomTypesJson,
+                                                        entry.symptom.symptomType
+                                                    ).joinToString(", "),
                                                     style = MaterialTheme.typography.bodyMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.error
+                                                    color = MaterialTheme.colorScheme.error,
+                                                    maxLines = 2,
+                                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                                 )
                                                 val durText = entry.symptom.durationMinutes?.let { " • $it Min" } ?: ""
                                                 Text(
