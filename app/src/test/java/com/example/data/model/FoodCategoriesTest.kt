@@ -42,7 +42,43 @@ class FoodCategoriesTest {
     @Test
     fun `large portion category is part of the catalogue`() {
         assertTrue(FoodCategories.ALL.any { it.key == FoodCategories.LARGE_PORTION })
-        assertEquals(11, FoodCategories.ALL.size)
+        assertEquals(18, FoodCategories.ALL.size)
         assertFalse(FoodCategories.ALL.map { it.key }.contains("stress"))
+    }
+
+    @Test
+    fun `new categories are selectable, encodable and labelled`() {
+        val expected = mapOf(
+            FoodCategories.SWEET to "Süß",
+            FoodCategories.SAVORY to "Deftig",
+            FoodCategories.FRIED to "Frittiert",
+            FoodCategories.STRONG_SPICY to "Stark würzig",
+            FoodCategories.BLACK_GREEN_TEA to "Schwarz-/Grüntee",
+            FoodCategories.DAIRY to "Milchprodukt",
+            FoodCategories.VERY_HOT to "Sehr heiß"
+        )
+        for ((key, label) in expected) {
+            assertTrue("missing category $key", FoodCategories.ALL.any { it.key == key })
+            assertEquals(label, FoodCategories.label(key))
+        }
+
+        val encoded = FoodCategories.encode(
+            listOf(FoodCategories.VERY_HOT, FoodCategories.SWEET, FoodCategories.DAIRY)
+        )
+        assertEquals("sweet,dairy,very_hot", encoded)
+        assertEquals(
+            listOf("Süß", "Milchprodukt", "Sehr heiß"),
+            FoodCategories.labels(FoodCategories.decode(encoded))
+        )
+    }
+
+    @Test
+    fun `existing category keys stay stable`() {
+        assertEquals("fat", FoodCategories.FAT)
+        assertEquals("large_portion", FoodCategories.LARGE_PORTION)
+        assertEquals(
+            listOf(FoodCategories.FAT, FoodCategories.LARGE_PORTION),
+            FoodCategories.decode("large_portion,fat")
+        )
     }
 }

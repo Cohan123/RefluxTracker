@@ -32,7 +32,7 @@ object InitialFoodData {
             name = "Tee (Schwarz/Grün)",
             category = "Getränke",
             iconName = "emoji_food_beverage",
-            categories = cats(FoodCategories.CAFFEINE)
+            categories = cats(FoodCategories.CAFFEINE, FoodCategories.BLACK_GREEN_TEA)
         ),
         FoodEntity(name = "Kräutertee (z.B. Kamille)", category = "Getränke", iconName = "emoji_food_beverage"),
         FoodEntity(
@@ -162,13 +162,13 @@ object InitialFoodData {
             name = "Schokolade",
             category = "Süßwaren & Snacks",
             iconName = "cookie",
-            categories = cats(FoodCategories.CHOCOLATE)
+            categories = cats(FoodCategories.CHOCOLATE, FoodCategories.SWEET)
         ),
         FoodEntity(
             name = "Gebäck / Kuchen",
             category = "Süßwaren & Snacks",
             iconName = "cake",
-            categories = cats(FoodCategories.FAT)
+            categories = cats(FoodCategories.FAT, FoodCategories.SWEET)
         ),
         FoodEntity(
             name = "Chips / Salziges",
@@ -182,15 +182,20 @@ object InitialFoodData {
             name = "Milchprodukte (Vollmilch/Sahne)",
             category = "Milch & Getreide",
             iconName = "egg_alt",
-            categories = cats(FoodCategories.FAT)
+            categories = cats(FoodCategories.FAT, FoodCategories.DAIRY)
         ),
         FoodEntity(
             name = "Käse",
             category = "Milch & Getreide",
             iconName = "restaurant",
-            categories = cats(FoodCategories.FAT)
+            categories = cats(FoodCategories.FAT, FoodCategories.DAIRY)
         ),
-        FoodEntity(name = "Joghurt", category = "Milch & Getreide", iconName = "restaurant"),
+        FoodEntity(
+            name = "Joghurt",
+            category = "Milch & Getreide",
+            iconName = "restaurant",
+            categories = cats(FoodCategories.DAIRY)
+        ),
         FoodEntity(name = "Brot / Toast", category = "Milch & Getreide", iconName = "bakery_dining"),
         FoodEntity(name = "Haferflocken / Porridge", category = "Milch & Getreide", iconName = "breakfast_dining")
     )

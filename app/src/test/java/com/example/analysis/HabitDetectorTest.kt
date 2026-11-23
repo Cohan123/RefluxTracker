@@ -149,6 +149,52 @@ class HabitDetectorTest {
     }
 
     @Test
+    fun `same foods at different times produce distinct stable signatures`() {
+        val meals = listOf(
+            breakfast(1, 10, 6, 0, listOf("Brot", "Käse")),
+            breakfast(2, 11, 6, 0, listOf("Brot", "Käse")),
+            breakfast(3, 12, 6, 0, listOf("Brot", "Käse")),
+            breakfast(4, 13, 20, 0, listOf("Brot", "Käse")),
+            breakfast(5, 14, 20, 0, listOf("Brot", "Käse")),
+            breakfast(6, 15, 20, 0, listOf("Brot", "Käse"))
+        )
+
+        val habits = HabitDetector.detect(meals)
+
+        assertEquals(2, habits.size)
+        assertEquals(2, habits.map { it.signature }.distinct().size)
+        assertTrue(habits.all { it.occurrenceCount == 3 })
+        assertTrue(habits.any { it.typicalMinutesOfDay in 359..361 })
+        assertTrue(habits.any { it.typicalMinutesOfDay in 1199..1201 })
+    }
+
+    @Test
+    fun `legacy food-only overrides still apply to time-bucketed habits`() {
+        val meals = listOf(
+            breakfast(1, 10, 8, 0, listOf("Brot", "Käse")),
+            breakfast(2, 11, 8, 0, listOf("Brot", "Käse")),
+            breakfast(3, 12, 8, 0, listOf("Brot", "Käse"))
+        )
+        val legacySignature = HabitDetector.signatureFor(
+            MealTypes.FRUEHSTUECK,
+            listOf("Brot", "Käse")
+        )
+
+        val renamed = HabitDetector.detect(
+            meals,
+            listOf(HabitOverrideEntity(signature = legacySignature, customName = "Alt"))
+        ).single()
+
+        assertEquals("Alt", renamed.name)
+
+        val hidden = HabitDetector.detect(
+            meals,
+            listOf(HabitOverrideEntity(signature = legacySignature, isDeleted = true))
+        )
+        assertTrue(hidden.isEmpty())
+    }
+
+    @Test
     fun `signature is case and umlaut insensitive`() {
         val first = HabitDetector.signatureFor("Frühstück", listOf("Käse", "Brot"))
         val second = HabitDetector.signatureFor("fruehstueck", listOf("brot", "KAESE"))

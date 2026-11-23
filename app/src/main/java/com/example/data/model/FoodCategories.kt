@@ -23,6 +23,13 @@ object FoodCategories {
     const val ALCOHOL = "alcohol"
     const val CARBONATED = "carbonated"
     const val ONION_GARLIC = "onion_garlic"
+    const val SWEET = "sweet"
+    const val SAVORY = "savory"
+    const val FRIED = "fried"
+    const val STRONG_SPICY = "strong_spicy"
+    const val BLACK_GREEN_TEA = "black_green_tea"
+    const val DAIRY = "dairy"
+    const val VERY_HOT = "very_hot"
     const val LARGE_PORTION = "large_portion"
 
     data class Definition(val key: String, val label: String)
@@ -38,6 +45,13 @@ object FoodCategories {
         Definition(ALCOHOL, "Alkohol"),
         Definition(CARBONATED, "Kohlensäure"),
         Definition(ONION_GARLIC, "Zwiebel/Knoblauch"),
+        Definition(SWEET, "Süß"),
+        Definition(SAVORY, "Deftig"),
+        Definition(FRIED, "Frittiert"),
+        Definition(STRONG_SPICY, "Stark würzig"),
+        Definition(BLACK_GREEN_TEA, "Schwarz-/Grüntee"),
+        Definition(DAIRY, "Milchprodukt"),
+        Definition(VERY_HOT, "Sehr heiß"),
         Definition(LARGE_PORTION, "Große Portion")
     )
 

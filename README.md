@@ -11,7 +11,7 @@ Hilft, persönliche Auslöser für Reflux / Sodbrennen zu erkennen, indem man Ma
 - **Mahlzeiten erfassen** — Zeitpunkt (auch rückwirkend), Mahlzeit-Typ (Frühstück, Mittag-, Abendessen, Snack, Getränk, Sonstiges), Portionsgröße, Notiz, zugeordnete Lebensmittel; nach dem Speichern springt die Tagesansicht automatisch auf das gespeicherte Datum
 - **Lebensmittel-Auswahl über der Tastatur** — suchbare, scrollbare Auswahl mit eigener Suche; die Eingabezeile bleibt über der Bildschirmtastatur sichtbar (`adjustResize` + `imePadding`)
 - **Gewohnheiten** — deterministisch aus der Mahlzeitenhistorie erkannt (mind. 3 ähnliche Mahlzeiten an mind. 3 Tagen); Vorschläge bei der Eingabe, Verwaltung mit Umbenennen, Lebensmittelauswahl, Häufigkeit, typischer Uhrzeit, letzter Nutzung und Löschen
-- **Lebensmittel-Kategorien** — manuell zuweisbare Analysemerkmale (Fettig, Scharf, Sauer, Tomate, Zitrus, Schokolade, Kaffee/Koffein, Alkohol, Kohlensäure, Zwiebel/Knoblauch, Große Portion), Mehrfachauswahl pro Lebensmittel; „Groß“ auf Mahlzeitenebene zählt als große Portion
+- **Lebensmittel-Kategorien** — manuell zuweisbare Analysemerkmale (Fettig, Scharf, Sauer, Tomate, Zitrus, Schokolade, Kaffee/Koffein, Alkohol, Kohlensäure, Zwiebel/Knoblauch, Süß, Deftig, Frittiert, Stark würzig, Schwarz-/Grüntee, Milchprodukt, Sehr heiß, Große Portion), Mehrfachauswahl pro Lebensmittel; „Groß“ auf Mahlzeitenebene zählt als große Portion
 - **Mahlzeiten bearbeiten** — bestehende Einträge inkl. Datum/Uhrzeit, Typ, Portion und Lebensmittelauswahl ändern
 - **Symptome erfassen** — Zeitpunkt (auch rückwirkend), mehrere Symptomarten gleichzeitig, Intensität (0–10), Dauer, Notiz sowie beliebig viele Tätigkeiten/Auslöser und Maßnahmen (Kataloge erweiterbar)
 - **Symptome bearbeiten** — bestehende Einträge inkl. Datum/Uhrzeit, Mehrfachauswahl und Katalogdetails ändern
@@ -97,6 +97,7 @@ Die Logik ist in `app/src/main/java/com/example/analysis/RefluxAnalyticsService.
 - Mahlzeiten werden chronologisch verarbeitet und zu Clustern gruppiert, wenn Mahlzeitentyp, Jaccard-Ähnlichkeit der Lebensmittelnamen (≥ 0,6) und zeitlicher Abstand (≤ 180 Min., zirkulär) passen.
 - Ein Habit braucht mindestens 3 Vorkommen an mindestens 3 verschiedenen lokalen Tagen.
 - Die Lebensmittelliste enthält nur Namen, die in mindestens 60 % der Cluster-Mahlzeiten vorkommen; die typische Uhrzeit ist der zirkuläre Mittelwert.
+- Die Signatur enthält zusätzlich einen 3-Stunden-Zeitblock der typischen Uhrzeit. Dadurch bleiben gleiche Lebensmittel zu unterschiedlichen Tageszeiten zwei getrennte Gewohnheiten und die UI-Liste hat garantiert eindeutige Schlüssel. Overrides aus älteren Versionen (ohne Zeitblock) werden weiterhin erkannt.
 - Nur Abweichungen (Name, Lebensmittelauswahl, gelöscht) werden in `habit_overrides` gespeichert. Die Mahlzeitenhistorie bleibt unverändert; Vorschläge werden bei jeder Eingabe neu berechnet.
 
 ### Arztbericht (PDF)
@@ -152,6 +153,11 @@ Voraussetzungen: JDK 17+, Android SDK mit Platform 36 und Build-Tools 36.0.0.
 - `MIGRATION_2_3` fügt beide Spalten/Tabellen hinzu und befüllt `foods.categories` nur für exakt benannte Lebensmittel des mitgelieferten Startkatalogs, sofern die Spalte noch leer ist. Bestehende, nicht kategorisierte Lebensmittel bleiben unverändert gültig.
 - `Migration2To3Test` baut eine echte v2-Datenbank auf und prüft Daten­erhalt, Backfill, leere Kategorien bei eigenen Lebensmitteln sowie die neuen DAOs.
 
+### Bugfixes 2026-11-23
+
+- **Gewohnheiten-Verwaltung:** Gleiche Lebensmittel zu unterschiedlichen Tageszeiten erzeugten zwei Habit-Cluster mit identischer Signatur. Die doppelten Schlüssel ließen `LazyColumn` beim Öffnen und nach dem Löschen abstürzen. Die Signatur enthält jetzt einen 3-Stunden-Zeitblock; Kollisionen werden vor der Ausgabe zusammengeführt. Overrides im alten Format bleiben gültig.
+- **Lebensmittel-Kategorien:** Süß, Deftig, Frittiert, Stark würzig, Schwarz-/Grüntee, Milchprodukt und Sehr heiß ergänzt. Bestehende Schlüssel, gespeicherte Kategorien und die Auswertungslogik bleiben unverändert; die Chips erscheinen automatisch in allen Kategorie-Auswahlen.
+
 ### Änderungen dieser Ausbaustufe
 
 Geänderte/neue Dateien (Auszug):
@@ -160,9 +166,9 @@ Geänderte/neue Dateien (Auszug):
 - Analyse: `analysis/RefluxAnalyticsService.kt`, `analysis/HabitDetector.kt`
 - UI/Logik: `ui/RefluxViewModel.kt`, `ui/meal/AddMealScreen.kt`, `ui/food/FoodsScreen.kt`, `ui/habit/HabitsScreen.kt`, `ui/analysis/AnalysisScreen.kt`, `ui/settings/SettingsScreen.kt`, `ui/navigation/RefluxNavHost.kt`, `util/DateTimeUtils.kt`, `AndroidManifest.xml`
 - Bericht: `report/DoctorReportBuilder.kt`, `report/DoctorReportPdf.kt`, `report/ReportSettings.kt`
-- Tests: `FoodCategoriesTest`, `DateTimeUtilsLocalDayTest`, `HabitDetectorTest`, `RefluxAnalyticsExtensionsTest`, `DoctorReportBuilderTest`, `Migration2To3Test`, `Migration1To2Test` (v3-Erwartung), `SettingsReportTest`, `RefluxViewModelDateTest`, `AnalysisScreenTest` (neue Karten)
+- Tests: `FoodCategoriesTest`, `DateTimeUtilsLocalDayTest`, `HabitDetectorTest`, `HabitsScreenTest`, `RefluxAnalyticsExtensionsTest`, `DoctorReportBuilderTest`, `Migration2To3Test`, `Migration1To2Test` (v3-Erwartung), `SettingsReportTest`, `RefluxViewModelDateTest`, `AnalysisScreenTest` (neue Karten)
 
-Tests: `./gradlew :app:testDebugUnitTest` → 130 Tests, 0 Fehler, 1 übersprungen (SQLCipher-Nativtest unter Robolectric). Lint und `assembleDebug` laufen erfolgreich.
+Tests: `./gradlew :app:testDebugUnitTest` → 137 Tests, 0 Fehler, 1 übersprungen (SQLCipher-Nativtest unter Robolectric). Lint und `assembleDebug` laufen erfolgreich.
 
 Offene Punkte:
 

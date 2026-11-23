@@ -111,39 +111,80 @@ object HabitDetector {
                 }
             }
 
-        return clusters
-            .filter {
-                it.occurrenceCount >= MIN_OCCURRENCES &&
-                    it.distinctDays.size >= MIN_DISTINCT_DAYS
-            }
-            .mapNotNull { cluster ->
-                val detectedFoods = cluster.representativeFoods()
-                if (detectedFoods.isEmpty()) return@mapNotNull null
-                val signature = signatureFor(cluster.mealType, detectedFoods)
-                val override = overrideBySignature[signature]
-                if (override?.isDeleted == true) return@mapNotNull null
+        val eligible = clusters.filter {
+            it.occurrenceCount >= MIN_OCCURRENCES &&
+                it.distinctDays.size >= MIN_DISTINCT_DAYS
+        }
 
-                val overrideFoods = override?.customFoods
-                    ?.split(',')
-                    ?.map { it.trim() }
-                    ?.filter { it.isNotEmpty() }
-                    ?.takeIf { it.isNotEmpty() }
-                val foods = overrideFoods ?: detectedFoods
-
-                DetectedHabit(
-                    signature = signature,
-                    name = override?.customName?.takeIf { it.isNotBlank() }
-                        ?: defaultName(cluster.mealType),
-                    mealType = cluster.mealType,
-                    foodNames = foods,
-                    occurrenceCount = cluster.occurrenceCount,
-                    distinctDayCount = cluster.distinctDays.size,
-                    typicalMinutesOfDay = circularMean(cluster.minuteSamples),
-                    lastUsedAt = cluster.lastUsedAt,
-                    isEdited = override != null && !override.isDeleted &&
-                        (override.customName != null || override.customFoods != null)
-                )
+        // Different times of day can produce two clusters with the same food
+        // set. Grouping by the same signature used by the UI keeps the list
+        // keys unique; a habit is never emitted twice.
+        val grouped = LinkedHashMap<String, Cluster>()
+        val identityGroups = LinkedHashMap<String, MutableList<Cluster>>()
+        for (cluster in eligible) {
+            val foods = cluster.representativeFoods()
+            if (foods.isEmpty()) continue
+            val bucket = timeBucket(circularMean(cluster.minuteSamples))
+            val identity = buildString {
+                append(normalizeKey(cluster.mealType))
+                append("::t")
+                append(bucket)
+                append("::")
+                append(foods.map(::normalizeKey).distinct().sorted().joinToString("|"))
             }
+            identityGroups.getOrPut(identity) { mutableListOf() }.add(cluster)
+        }
+        for (group in identityGroups.values) {
+            val target = group.first()
+            group.drop(1).forEach(target::absorb)
+            val foods = target.representativeFoods()
+            if (foods.isEmpty()) continue
+            val signature = signatureFor(
+                mealType = target.mealType,
+                foodNames = foods,
+                typicalMinutesOfDay = circularMean(target.minuteSamples)
+            )
+            val existing = grouped[signature]
+            if (existing == null) {
+                grouped[signature] = target
+            } else {
+                // Extremely unlikely bucket drift: merge instead of emitting
+                // two habits with the same lazy-list key.
+                existing.absorb(target)
+            }
+        }
+
+        return grouped.mapNotNull { (signature, cluster) ->
+            val detectedFoods = cluster.representativeFoods()
+            if (detectedFoods.isEmpty()) return@mapNotNull null
+            // Overrides saved before time buckets were part of the signature
+            // remain valid for the same meal type and food set.
+            val legacySignature = signatureFor(cluster.mealType, detectedFoods)
+            val override = overrideBySignature[signature]
+                ?: overrideBySignature[legacySignature]
+            if (override?.isDeleted == true) return@mapNotNull null
+
+            val overrideFoods = override?.customFoods
+                ?.split(',')
+                ?.map { it.trim() }
+                ?.filter { it.isNotEmpty() }
+                ?.takeIf { it.isNotEmpty() }
+            val foods = overrideFoods ?: detectedFoods
+
+            DetectedHabit(
+                signature = signature,
+                name = override?.customName?.takeIf { it.isNotBlank() }
+                    ?: defaultName(cluster.mealType),
+                mealType = cluster.mealType,
+                foodNames = foods,
+                occurrenceCount = cluster.occurrenceCount,
+                distinctDayCount = cluster.distinctDays.size,
+                typicalMinutesOfDay = circularMean(cluster.minuteSamples),
+                lastUsedAt = cluster.lastUsedAt,
+                isEdited = override != null && !override.isDeleted &&
+                    (override.customName != null || override.customFoods != null)
+            )
+        }
             .sortedWith(
                 compareByDescending<DetectedHabit> { it.occurrenceCount }
                     .thenByDescending { it.lastUsedAt }
@@ -175,15 +216,29 @@ object HabitDetector {
             .take(limit.coerceAtLeast(0))
     }
 
-    fun signatureFor(mealType: String, foodNames: Collection<String>): String {
+    fun signatureFor(
+        mealType: String,
+        foodNames: Collection<String>,
+        typicalMinutesOfDay: Int? = null
+    ): String {
         val key = foodNames
             .map(::normalizeKey)
             .filter { it.isNotEmpty() }
             .distinct()
             .sorted()
             .joinToString("|")
-        return "${normalizeKey(mealType)}::$key"
+        val mealKey = normalizeKey(mealType)
+        return if (typicalMinutesOfDay == null) {
+            // Legacy format, still accepted when looking up older overrides.
+            "$mealKey::$key"
+        } else {
+            "$mealKey::t${timeBucket(typicalMinutesOfDay)}::$key"
+        }
     }
+
+    /** Three-hour buckets: the same tolerance the clustering uses. */
+    fun timeBucket(minutesOfDay: Int): Int =
+        (((minutesOfDay % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY) / 180
 
     fun normalizeKey(value: String): String = value
         .trim()
@@ -263,6 +318,22 @@ object HabitDetector {
             minuteSamples += minutes
             occurrenceCount++
             lastUsedAt = maxOf(lastUsedAt, timestamp)
+        }
+
+        /**
+         * Folds another cluster with the same meal type/food/time identity into
+         * this one so that the detector never emits duplicate list keys.
+         */
+        fun absorb(other: Cluster) {
+            other.foodCounts.forEach { (key, count) ->
+                foodCounts[key] = (foodCounts[key] ?: 0) + count
+                foodDisplayNames.putIfAbsent(key, other.foodDisplayNames[key] ?: key)
+            }
+            keys += other.keys
+            distinctDays += other.distinctDays
+            minuteSamples += other.minuteSamples
+            occurrenceCount += other.occurrenceCount
+            lastUsedAt = maxOf(lastUsedAt, other.lastUsedAt)
         }
 
         fun representativeFoods(): List<String> {
